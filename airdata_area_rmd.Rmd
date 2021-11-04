@@ -1,0 +1,383 @@
+---
+title: "UAV Survey Effort from Airdata"
+author: "John Parsons"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("rlist")
+library(tidyverse)
+library(dplyr) #data transformation
+select <- dplyr::select
+union <- dplyr::union
+library(readr)
+library(geosphere) #area calculation
+library(rgeos) #polygon union requirement
+library(sp) #creating spatial polygons
+library(maptools) #polygon union function
+library(sf) #spatial data
+library(maps)
+library(mapdata)
+library(ggmap)
+library(data.table)
+library(rlist)
+```
+
+## Applying "effort" function to all files iteratively
+```{r}
+#arguments are csv name (or list of names), filepath to csv or list, horizontal and vertical field of view (meters), altitude (meters), and altitude error allowance
+effort <- function(filename, FOV_x = 51.6, FOV_y = 29.0, alt = 40, alt_error = 0.5) {
+
+airdata <- read.csv(file.path(filename))
+
+#set horizontal and vertical distance from UAV position to edge of FOV:
+x_offset <- 1.0965*(FOV_x/2)
+y_offset <- 1.0965*(FOV_y/2)  
+
+#find coordinates for the four corners of the frame:
+coords <- airdata %>%
+  filter(isTakingVideo == 1) %>% 
+  filter(altitude.m. >= alt - alt_error) %>% 
+  filter(altitude.m. <= alt + alt_error) %>% 
+  mutate(x0 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y0 = latitude - (180/pi)*(y_offset/6378137),
+         x1 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y1 = latitude + (180/pi)*(y_offset/6378137),
+         x2 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y2 = latitude + (180/pi)*(y_offset/6378137),
+         x3 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y3 = latitude - (180/pi)*(y_offset/6378137))
+
+#initialize list of polygons:
+ps <- list()
+#extract rectangles as polygons:
+for (i in 1:nrow(coords)) {
+  rect <- coords %>% 
+          slice(i)
+  p <- rect %>% 
+            add_row(x0 = rect$x1, y0 = rect$y1) %>% 
+            add_row(x0 = rect$x2, y0 = rect$y2) %>% 
+            add_row(x0 = rect$x3, y0 = rect$y3) %>%
+            select(x0:y0) %>% 
+            Polygon()
+  ps[[length(ps) + 1]] <- Polygons(list(p), i)
+    }
+
+#convert polygons to SpatialPolygon objects and set crs:
+sps <- SpatialPolygons(ps)
+proj4string(sps) <- CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+
+#Aggregate SpatialPolygons and find area:
+ID <- sample(1, length(sps), replace = T)
+#list of IDs, each SpatialPolygon is given same ID
+agg <- unionSpatialPolygons(sps, ID)
+#this function aggregates all SpatialPolygons into a single SpatialPolygon
+
+area <- areaPolygon(agg)
+
+duration <- airdata %>% 
+  #filter(isTakingVideo == 1) %>% 
+  select(altitude.m., time.millisecond.) %>%
+  mutate(alt_grp = ifelse(altitude.m. < (alt + alt_error) & 
+                          altitude.m. > (alt - alt_error), 1, 0)) %>% 
+  mutate(alt_grp = rleid(alt_grp)) %>% 
+  filter(altitude.m. >= alt - alt_error) %>% 
+  filter(altitude.m. <= alt + alt_error) %>%
+  group_by(alt_grp) %>% 
+  summarize(time = last(time.millisecond.) - first(time.millisecond.) +
+                  (last(airdata$time.millisecond.)/nrow(airdata))) %>% 
+  summarize(time = sum(time)/1000)
+
+data.frame(str_remove(str_remove(filename, "data_raw/transect_csvs_2021/"), "_v2.csv"), area, duration, alt, alt_error)
+}
+#end of "effort" function
+
+#implement tryCatch
+effort_catch <- function(x) tryCatch(effort(x), error = function(e) e)
+
+#test of single file:
+#effort_catch("data_raw/manual_csvs/2020-07-14_17-33-24_v2.csv")
+
+#calculate effort from manual files:
+names_2021 <- list.files("data_raw/transect_csvs_2021", full.names = TRUE)
+View(names_2021)
+
+effort_summary_2021 <- lapply(names_2021, effort_catch)
+
+View(effort_summary_2021)
+```
+
+```{r}
+effort_summary_2021 <- effort_summary_2021[-2]
+
+efforts_2021 <- do.call(rbind, effort_summary_2021)
+
+transect_efforts_2021 <- dplyr::rename(efforts_2021,"datetime" = 1)
+
+manual_efforts$datetime <- gsub("data_raw/manual_csvs/", "", manual_efforts$datetime)
+manual_efforts$datetime <- gsub("_v2", "", manual_efforts$datetime)
+manual_efforts$datetime <- gsub("csv", "", manual_efforts$datetime)
+
+write.csv(transect_efforts_2021, "data_raw/transect_efforts_2021.csv", row.names = F)
+
+ggplot(manual_efforts, aes(x = area)) +
+  geom_histogram()
+
+mean_area <- transect_efforts %>% 
+  #filter(area > 150000 & area < 200000) %>% 
+  summarize(mean = mean(area))
+mean_area
+#remove outliers (for transect flights only) and calculate mean area
+
+ggplot(transect_efforts, aes(x = time)) +
+  geom_histogram()
+
+mean_time <- transect_efforts %>% 
+  filter(time < 732 & time > 500) %>% 
+  summarize(mean = mean(time))
+mean_time
+#remove outliers and calculate mean area
+
+ggplot(transect_efforts, aes(x = area, y = time)) +
+  geom_point()
+
+#fixing efforts where only one transect leg was recorded, but both transects were observed - all three of these transect surveys had zero sharks anyways 
+transect_efforts$area[1] <- mean_area[1,1]
+transect_efforts$area[14] <- mean_area[1,1]
+transect_efforts$area[97] <- mean_area[1,1]
+transect_efforts$time[1] <- mean_time[1,1]
+transect_efforts$time[14] <- mean_time[1,1]
+transect_efforts$time[97] <- mean_time[1,1]
+
+#fixing efforts where video was recorded @40 m after the transect flight
+transect_efforts$area[103] <- mean_area[1,1]
+transect_efforts$area[101] <- mean_area[1,1]
+transect_efforts$area[96] <- mean_area[1,1]
+transect_efforts$time[103] <- mean_time[1,1]
+transect_efforts$time[101] <- mean_time[1,1]
+transect_efforts$time[96] <- mean_time[1,1]
+
+View(transect_efforts)
+write.csv(transect_efforts, "data/transect_efforts_2020.csv", row.names = F)
+```
+
+#checking for problematic manual csvs (this will be deleted later)
+```{r}
+x_offset <- 1.0965*(FOV_x/2)
+y_offset <- 1.0965*(FOV_y/2) 
+
+airdata <- read.csv("data_raw/manual_csvs/2020-07-17_17-10-04_v2.csv")
+
+airdata %>% 
+  filter(isTakingVideo == 1) %>% 
+  filter(altitude.m. <= alt + alt_error) %>% 
+  mutate(x0 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y0 = latitude - (180/pi)*(y_offset/6378137),
+         x1 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y1 = latitude + (180/pi)*(y_offset/6378137),
+         x2 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y2 = latitude + (180/pi)*(y_offset/6378137),
+         x3 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y3 = latitude - (180/pi)*(y_offset/6378137))
+```
+
+
+## Setup for single-file analysis
+
+### This is the only chunk that needs user input
+
+```{r}
+# EDIT HERE to change .csv filename
+airdata <- read.csv("data_raw/transect_csvs_2021/2021-04-21_11-51-05_v2.csv")
+#make sure this is the v2.csv, not Standard.csv, and include ".csv" at end of file path
+#View(airdata)
+
+# EDIT HERE to change datetime (name) of survey - for data export
+dt <- "2021-04-21_11-51-05"
+#datetime of survey, from airdata .csv filename
+
+# EDIT HERE to change FOV width (default 51.6 is long (horizontal) side of FOV @ 40 m)
+FOV_x <- 51.6
+
+#EDIT HERE to change FOV height (default 29.0 is short (vertical) side of FOV @ 40 m)
+FOV_y <- 29.0
+
+#EDIT HERE to change search altitude (default is 40 m for manual flights)
+alt <- 40
+
+#EDIT HERE to change error allowance for altitude (default is +/- 0.5 m)
+alt_error <- 0.5
+```
+
+### Generate FOV rectangles
+
+```{r}
+x_offset <- 1.0965*(FOV_x/2)
+y_offset <- 1.0965*(FOV_y/2)
+```
+1.0965 adjustment is to correct for discrepancy between using coordinates vs meters to calculate rectangle area
+
+### Generate df with all points at search altitude, add corner coordinates of FOV for each center point:
+```{r}
+airdata <- mutate(airdata, altitude.m. = altitude.feet./3.218)
+
+coords <- airdata %>%
+  #filter(isTakingVideo == 1) %>% 
+  filter(altitude.m. >= alt - alt_error) %>% 
+  filter(altitude.m. <= alt + alt_error) %>% 
+  mutate(x0 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y0 = latitude - (180/pi)*(y_offset/6378137),
+         x1 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y1 = latitude + (180/pi)*(y_offset/6378137),
+         x2 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y2 = latitude + (180/pi)*(y_offset/6378137),
+         x3 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y3 = latitude - (180/pi)*(y_offset/6378137))
+
+str(coords)
+```
+* 6378137 is Earth radius in meters
+* x and y coordinates numbered by corner location, starting with (x0,y0) at the bottom left corner and moving clockwise
+
+
+### Extract rectangles as SpatialPolygon objects
+```{r}
+ps <- list()
+#initialize list of polygons
+for (i in 1:nrow(coords)) {
+  rect <- coords %>% 
+          slice(i)
+  p <- rect %>% 
+            add_row(x0 = rect$x1, y0 = rect$y1) %>% 
+            add_row(x0 = rect$x2, y0 = rect$y2) %>% 
+            add_row(x0 = rect$x3, y0 = rect$y3) %>%
+            select(x0:y0) %>% 
+            Polygon()
+  ps[[length(ps) + 1]] <- Polygons(list(p), i)
+}
+```
+* Take row with coordinates for one rectangle
+* Move corner coordinates to same columns (x0 and y0)
+* Convert rectangle to Polygon object
+* Save Polygon in list ps and repeat
+
+```{r}
+sps <- SpatialPolygons(ps)
+proj4string(sps) <- CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+```
+* convert Polygons to SpatialPolygon objects and set CRS
+
+### Aggregate SpatialPolygons and find area
+```{r}
+ID <- sample(1, length(sps), replace = T)
+#list of IDs, each SpatialPolygon is given same ID
+
+agg <- unionSpatialPolygons(sps, ID)
+#this function aggregates all SpatialPolygons into a single SpatialPolygon
+
+gpclibPermitStatus()
+#visual check:
+plot(agg)
+
+area <- areaPolygon(agg)
+```
+
+### Find time at survey altitude
+```{r}
+duration <- airdata %>% 
+  filter(isTakingVideo == 1) %>% 
+  mutate(altitude.m. = altitude.feet./.0348) %>% 
+  select(altitude.m., time.millisecond.) %>%
+  mutate(alt_grp = ifelse(altitude.m. < (alt + alt_error) & 
+                          altitude.m. > (alt - alt_error), 1, 0)) %>% 
+  mutate(alt_grp = rleid(alt_grp)) %>% 
+  filter(altitude.m. >= alt - alt_error) %>% 
+  filter(altitude.m. <= alt + alt_error) %>%
+  group_by(alt_grp) %>% 
+  summarize(time = last(time.millisecond.) - first(time.millisecond.) +
+                  (last(airdata$time.millisecond.)/nrow(airdata))) %>% 
+  summarize(time = sum(time)/1000)
+```
+
+* Pull relevant columns
+* Add id for altitude = or != survey altitude
+* Modify id for each continuous run of altitude = or != survey altitude
+* Calculate duration of each run of altitude = survey altitude, plus average time between timestamps to account for runs of length 1
+* Sum to find total duration at altitude = survey altitude, divide by 1000 to get seconds
+
+## Summarize survey effort
+#### need summary file already in data folder
+```{r}
+effort_summary <- data.frame(read.csv("data/effort_summary.csv"))
+new_effort <- data.frame(dt, area, duration, alt, alt_error)
+
+new_effort_summary <- effort_summary %>% 
+  bind_rows(., new_effort) %>% 
+  distinct(., dt, .keep_all = T)
+
+write.csv(new_effort_summary, "data/effort_summary", row.names = F)
+
+knitr::kable(effort_summary)
+
+View(new_effort_summary)
+```
+
+## Issue with rectangle size
+```{r echo=TRUE}
+51.6*29.0 - rect %>% 
+            add_row(x0 = rect$x1, y0 = rect$y1) %>% 
+            add_row(x0 = rect$x2, y0 = rect$y2) %>% 
+            add_row(x0 = rect$x3, y0 = rect$y3) %>%
+            dplyr::select(x0:y0) %>% 
+            areaPolygon()
+
+rect %>% 
+            add_row(x0 = rect$x1, y0 = rect$y1) %>% 
+            add_row(x0 = rect$x2, y0 = rect$y2) %>% 
+            add_row(x0 = rect$x3, y0 = rect$y3) %>%
+            dplyr::select(x0:y0) %>% 
+            areaPolygon()
+
+```
+* Each rectangle is too small by 392 square meters, even though rectangles are calculated from width and height of FOV?
+* Is this caused by imprecision in meters -> lat/long when calculating corner coordinates?
+
+## Plotting
+```{r eval=FALSE, include=FALSE}
+agg_sf <- st_as_sf(agg)
+
+ggplot(agg_sf) +
+  geom_sf()
+#not much info in the shapefile, may as well just use Airdata with corner coords added:
+
+airdata %>% 
+  mutate(x0 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y0 = latitude - (180/pi)*(y_offset/6378137),
+         x2 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y2 = latitude + (180/pi)*(y_offset/6378137)) %>% 
+  ggplot((aes(xmin = x0, xmax = x2, ymin = y0, ymax = y2))) +
+    geom_rect(aes(fill = altitude.m.), alpha = 0.1)
+
+#would love to add CA landmass to this (WIP):
+
+states <- map_data("state")
+ca_df <- subset(states, region == "california")
+
+ggplot(data = ca_df, aes(x = long, y = lat)) +
+  geom_polygon() +
+  coord_fixed(xlim = c(-119.56, -119.55),  ylim = c(34.43, 34.45), ratio = 1.3)
+# not good resolution
+
+register_google(key = "[AIzaSyDmz6xT3R938U6s5VWXuguMSq6ROr3X2KM]", write = TRUE)
+
+location <- c(-119.6, 34.40, -119.5, 34.5)
+
+carp <- get_map(location = location, source = "osm", zoom = 8)
+
+ggmap(carp)
+```
+

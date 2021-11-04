@@ -1,0 +1,1861 @@
+---
+title: "MA_analysis_rmd"
+author: "John Parsons"
+date: "Compiled on `r format(Sys.Date(), '%B %d, %Y`"
+output: html_document
+---
+
+#Setup
+```{r, eval=FALSE}
+#install.packages("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "plyr", "broom.mixed", "ggthemes", "padr", "hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot")
+#install.packages("webshot")
+library(tidyverse)
+#library(plyr); library(dplyr)
+library(lme4) #modelling
+library(glmmTMB) #modelling
+library(DHARMa) #model diagnostics
+library(effects)
+library(broom.mixed)
+library(MuMIn)
+library(ggthemes) #visualizations
+library(RColorBrewer) #visualizations
+library(padr)
+library(ptest)
+library(maps)
+library(mapdata)
+library(ggmap)
+library(hexbin) #heatmaps
+library(zoo)
+library(car)
+library(lubridate) #dates
+library(slider)
+library(hms)
+library(olsrr)
+library(bbmle) #AIC tables
+library(emmeans)#effects testing
+library(gt)#nice tables
+library(webshot) #saving gt tables
+#webshot::install_phantomjs() 
+#citation("ptest")
+```
+
+==============================================================================================
+
+# Data Tidying
+
+## 2019 Data Tidying
+
+### Flight-Level Data Tidying (1 row = 1 day) - 2019
+```{r}
+dat_2019 <- read.csv("data_raw/2019_flight_data.csv")
+#View(dat_2019)
+dat_2019 <- mutate(dat_2019, total_unique = transect_total)
+dat_2019$date[93:96] <- as.character(c(
+  "10/25/2019", "10/28/2019", "10/30/2019", "11/4/2019"))
+dat_2019$date <- as.Date(dat_2019$date, "%m/%d/%Y")
+dat_2019$small<- as.numeric(as.character(dat_2019$small))
+dat_2019$large<- as.numeric(as.character(dat_2019$large))
+dat_2019$transect_total <- as.numeric(dat_2019$transect_total)
+dat_2019$transect_small <- as.numeric(dat_2019$transect_small)
+dat_2019$transect_large <- as.numeric(dat_2019$transect_large)
+dat_2019 <- dat_2019 %>%
+  mutate(datetime = as_datetime(transect_datetime)) %>% 
+  mutate(date_hour = round_date(datetime, "hour"))
+```
+
+### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2019
+```{r}
+dat_2019 <- dat_2019 %>%
+  mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
+  mutate(transect_duration_min = transect_duration_sec/60)
+
+dat_2019 <- dat_2019 %>% 
+  mutate(transect_effort = transect_area_km2*transect_duration_min) %>% 
+  mutate(transect_total_density = if_else(transect_total == 0, 0, 
+                                          transect_total/transect_effort)) %>% 
+  mutate(transect_small_density = if_else(transect_small == 0, 0,               
+                                          transect_small/transect_effort)) %>%
+  mutate(transect_large_density = if_else(transect_large == 0,0,
+                                          transect_large/transect_effort))
+```
+
+### Reading in environmental data - 2019
+```{r}
+channel_dat_2019_raw <- read.csv("data_raw/2019_channel_data.csv")
+str(channel_dat_2019_raw)
+
+channel_dat_2019 <- channel_dat_2019_raw %>%
+                      mutate_if(is.character, as.numeric) %>% 
+                      mutate_at(vars(WVHT, DPD, APD), ~na_if(., 99)) %>%  
+                      mutate_at(vars(MWD, ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
+                      group_by(MM, DD, hh) %>% 
+                      summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
+                      ungroup() %>% 
+                      filter(MM > 4) %>% 
+                      add_column(year = 2019, .before = 1) %>% 
+                      mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
+                      mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
+                      mutate(date_hour = round_date(datetime, "hour")) %>% 
+                      mutate(max_wtemp_previous_24 = 
+                              slide_dbl(WTMP, max, .before = 24)) %>% 
+                      mutate(min_wtemp_previous_24 = 
+                              slide_dbl(WTMP, min, .before = 24)) %>% 
+                      mutate(mean_wtemp_previous_24 = 
+                              slide_dbl(WTMP, mean, .before = 24))
+
+flights_plus_channel_dat_2019 <- left_join(dat_2019, channel_dat_2019, by = "date_hour")
+
+dat_2019_full <- flights_plus_channel_dat_2019 %>%
+  mutate(wtemp_2 = mean_wtemp_previous_24^2)
+```
+
+### Size Data Tidying (1 row = 1 individual) - 2019
+```{r}
+size_dat_2019 <- read.csv("data_raw/size_dat_2019.csv")
+#View(size_dat_2019)
+size_dat_2019 <- size_dat_2019 %>% 
+  select(1:10) %>% 
+  slice(-(48:49))
+size_dat_2019$date <- as.Date(size_dat_2019$date, "%m/%d/%Y")
+size_dat_2019$length <- as.numeric(size_dat_2019$length)
+size_dat_2019 <- size_dat_2019 %>% 
+                  mutate(length_m = length/3.2808)
+size_dat_2019 <- size_dat_2019 %>% 
+                  mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+
+size_dat_2019 %>% 
+  filter(size_class == "Adult") %>% 
+  nrow()
+#no adults!!
+```
+
+## 2020 Data Tidying
+
+### Flight-Level Data Tidying - 2020
+* may have to pull in more code from first chunk once I start adding in environmental data
+```{r}
+dat_2020 <- read.csv("data_raw/2020_flight_data.csv")
+#View(dat_2020)
+dat_2020 <- dplyr::rename(dat_2020, date = 1)
+dat_2020$date <- as_date(as.Date(dat_2020$date, "%m/%d/%Y"))
+dat_2020$transect_total <- as.numeric(dat_2020$transect_total)
+dat_2020$transect_small <- as.numeric(dat_2020$transect_small)
+dat_2020$transect_large <- as.numeric(dat_2020$transect_large)
+dat_2020$transect_datetime <- as_datetime(dat_2020$transect_datetime)
+dat_2020$manual_datetime <- as_datetime(dat_2020$manual_datetime)
+dat_2020 <- dat_2020 %>%
+  mutate(datetime = as_datetime(
+    pmin(transect_datetime, manual_datetime, na.rm = TRUE))) %>% 
+  mutate(date_hour = round_date(datetime, "hour"))
+```
+
+### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2020
+```{r}
+dat_2020 <- dat_2020 %>%
+  mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
+  mutate(transect_duration_min = transect_duration_sec/60)
+
+dat_2020 <- dat_2020 %>% 
+  mutate(transect_effort = transect_area_km2*transect_duration_min) %>% 
+  mutate(transect_total_density = transect_total/transect_effort) %>% 
+  mutate(transect_small_density = transect_small/transect_effort) %>%
+  mutate(transect_large_density = transect_large/transect_effort)
+
+dat_2020 <- dat_2020 %>%
+  mutate(manual_area_km2 = manual_area_m2/1000000) %>% 
+  mutate(manual_duration_min = manual_duration_sec/60)
+
+dat_2020 <- dat_2020 %>% 
+  mutate(manual_effort = manual_area_km2*manual_duration_min) %>% 
+  mutate(manual_total_density = manual_total/manual_effort) %>% 
+  mutate(manual_small_density = manual_small/manual_effort) %>%
+  mutate(manual_large_density = manual_large/manual_effort)
+```
+
+### Reading in environmental data - 2020
+```{r}
+channel_dat_2020_raw <- read.csv("data_raw/2020_channel_data.csv")
+str(channel_dat_2020_raw)
+
+channel_dat_2020 <- channel_dat_2020_raw %>%
+  mutate_if(is.character, as.numeric) %>% 
+  mutate_at(vars(WVHT_m, DPD_sec, APD_sec), ~na_if(., 99)) %>%  
+  mutate_at(vars(MWD_deg, ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
+  group_by(MM, DD, hh) %>% 
+  summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
+  ungroup() %>% 
+  filter(MM > 4) %>% 
+  add_column(year = 2020, .before = 1) %>% 
+  mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
+  mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
+  mutate(date_hour = round_date(datetime, "hour")) %>% 
+  mutate(max_wtemp_previous_24 = slide_dbl(WTMP, max, .before = 24)) %>% 
+  mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
+  mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
+
+flights_plus_channel_dat_2020 <- left_join(dat_2020, channel_dat_2020, by = "date_hour")
+
+flights_plus_channel_dat_2020 <- flights_plus_channel_dat_2020 %>%
+  dplyr::select(-c(2:8))  
+
+dat_2020_full <- flights_plus_channel_dat_2020 %>%
+  mutate(wtemp_2 = mean_wtemp_previous_24^2)
+```
+
+### Size Data Tidying (1 row = 1 individual) - 2020
+```{r}
+size_dat_2020 <- read.csv("data_raw/size_dat_2020.csv")
+#View(size_dat_2020)
+size_dat_2020 <- size_dat_2020 %>% slice(4:nrow(size_dat_2020))
+size_dat_2020$date <- as.Date(size_dat_2020$date, "%m/%d/%Y")
+size_dat_2020$length <- as.numeric(size_dat_2020$length)
+size_dat_2020 <- size_dat_2020 %>% 
+                  mutate(length_m = length/3.2808)
+size_dat_2020 <- size_dat_2020 %>% 
+                  mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+
+size_dat_2020 %>% 
+  filter(size_class == "Adult") %>% 
+  nrow()
+
+size_dat_2020 %>% 
+  filter(size_class == "Juvenile") %>% 
+  nrow()
+#roughly 10x more juveniles than adults
+```
+
+## 2021 Data Tidying
+
+### Flight-Level Data Tidying - 2021
+* may have to pull in more code from first chunk once I start adding in environmental data
+```{r}
+dat_2021 <- read.csv("data_raw/2021_flight_data.csv")
+#View(dat_2021)
+dat_2021 <- dplyr::rename(dat_2021, date = 1)
+dat_2021$date <- as_date(as.Date(dat_2021$date, "%m/%d/%Y"))
+dat_2021$transect_total <- as.numeric(dat_2021$transect_total)
+dat_2021$transect_small <- as.numeric(dat_2021$transect_small)
+dat_2021$transect_large <- as.numeric(dat_2021$transect_large)
+dat_2021$manual_small <- as.numeric(dat_2021$manual_small)
+dat_2021$manual_large <- as.numeric(dat_2021$manual_large)
+
+dat_2021$transect_datetime <- as_datetime(dat_2021$transect_datetime)
+dat_2021$manual_datetime <- as_datetime(dat_2021$manual_datetime)
+dat_2021 <- dat_2021 %>%
+  mutate(datetime = as_datetime(
+    pmin(transect_datetime, manual_datetime, na.rm = TRUE))) %>% 
+  mutate(date_hour = round_date(datetime, "hour"))
+```
+
+### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2021
+```{r}
+dat_2021 <- dat_2021 %>%
+  mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
+  mutate(transect_duration_min = transect_duration_sec/60)
+
+dat_2021 <- dat_2021 %>% 
+  mutate(transect_effort = transect_area_km2*transect_duration_min) %>% 
+  mutate(transect_total_density = transect_total/transect_effort) %>% 
+  mutate(transect_small_density = transect_small/transect_effort) %>%
+  mutate(transect_large_density = transect_large/transect_effort)
+
+dat_2021 <- dat_2021 %>%
+  mutate(manual_area_km2 = manual_area_m2/1000000) %>% 
+  mutate(manual_duration_min = manual_duration_sec/60)
+
+dat_2021 <- dat_2021 %>% 
+  mutate(manual_effort = manual_area_km2*manual_duration_min) %>% 
+  mutate(manual_total_density = manual_total/manual_effort) %>% 
+  mutate(manual_small_density = manual_small/manual_effort) %>%
+  mutate(manual_large_density = manual_large/manual_effort)
+```
+
+### Reading in environmental data - 2021
+```{r}
+channel_dat_2021_raw <- read.csv("data_raw/2021_channel_data.csv")
+str(channel_dat_2021_raw)
+
+channel_dat_2021 <- channel_dat_2021_raw %>%
+                      mutate_if(is.character, as.numeric) %>% 
+                      mutate_at(vars(WVHT, DPD, APD, MWD), ~na_if(., 99)) %>%  
+                      mutate_at(vars(ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
+                      group_by(MM, DD, hh) %>% 
+                      summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
+                      ungroup() %>% 
+                      filter(MM > 3) %>% 
+                      add_column(year = 2021, .before = 1) %>% 
+                      mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
+                      mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
+                      mutate(date_hour = round_date(datetime, "hour")) %>% 
+                      mutate(max_wtemp_previous_24 = 
+                              slide_dbl(WTMP, max, .before = 24)) %>% 
+                      mutate(min_wtemp_previous_24 = 
+                              slide_dbl(WTMP, min, .before = 24)) %>% 
+                      mutate(mean_wtemp_previous_24 = 
+                              slide_dbl(WTMP, mean, .before = 24))
+
+flights_plus_channel_dat_2021 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
+
+dat_2021_full <- flights_plus_channel_dat_2021 %>%
+  mutate(wtemp_2 = mean_wtemp_previous_24^2)
+```
+
+### Size Data Tidying (1 row = 1 individual) - 2021
+```{r}
+size_dat_2021 <- read.csv("data_raw/size_dat_2021.csv")
+#View(size_dat_2021)
+size_dat_2021 <- size_dat_2021 %>% slice(3:nrow(size_dat_2021))
+size_dat_2021$date <- as.Date(size_dat_2021$date, "%m/%d/%Y")
+size_dat_2021$length <- as.numeric(size_dat_2021$length)
+size_dat_2021 <- size_dat_2021 %>% 
+                  mutate(length_m = length/3.2808)
+size_dat_2021 <- size_dat_2021 %>% 
+                  mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+
+size_dat_2021 %>% 
+  filter(size_class == "Adult") %>% 
+  nrow()
+
+size_dat_2021 %>% 
+  filter(size_class == "Juvenile") %>% 
+  nrow()
+#MUCH higher % of adults than 2020 - 3:4 ratio
+```
+
+## Three-Year ("3yr") dataset tidying
+
+### Building 3yr daily dataset
+```{r}
+str(dat_2019_full)
+dat_2019_full$transect_datetime <- as_datetime(dat_2019_full$transect_datetime)
+
+str(dat_2020_full)
+dat_2020_full <- dat_2020_full %>% 
+                  rename(WDIR = WDIR_deg,
+                         WSPD = WSPD_ms,
+                         DPD = DPD_sec,
+                         APD = APD_sec,
+                         MWD = MWD_deg,
+                         PRES = PRES_hPa)
+dat_2020_full$datetime.x <- as_datetime(dat_2020_full$datetime.x)  
+dat_2020_full <- select(dat_2020_full, -(17:19))
+
+daily_2yr_dat <- full_join(dat_2019_full, dat_2020_full)
+#View(daily_2yr_dat)
+
+daily_2yr_dat$manual_small <- as.numeric(daily_2yr_dat$manual_small)
+dat_2021_full$manual_small <- as.numeric(dat_2021_full$manual_small)
+daily_2yr_dat$manual_large <- as.numeric(daily_2yr_dat$manual_large)
+dat_2021_full$manual_large <- as.numeric(dat_2021_full$manual_large)
+daily_2yr_dat$manual_unique <- as.numeric(daily_2yr_dat$manual_unique)
+dat_2021_full$manual_unique <- as.numeric(dat_2021_full$manual_unique)
+daily_2yr_dat$manual_total <- as.numeric(daily_2yr_dat$manual_total)
+dat_2021_full$manual_total <- as.numeric(dat_2021_full$manual_total)
+
+daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021_full)
+#View(daily_3yr_dat)
+
+#daily_3yr_dat <- select(daily_3yr_dat, -c(7:8,23:25, 86:87))
+
+write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
+```
+
+### Building 3yr size dataset
+```{r}
+#View(size_dat_2019)
+size_dat_2019$video <- as.character(size_dat_2019$video)
+size_dat_2019$order <- as.character(size_dat_2019$order)
+size_dat_2019 <- size_dat_2019 %>% 
+                  rename(tagged. = tagged,
+                         altitude = alt)
+
+size_dat_2019$unique <- "Y"
+size_dat_2019$tagged. <- "X"
+size_dat_2020$altitude <- as.numeric(size_dat_2020$altitude)
+
+size_dat_2yr <- full_join(size_dat_2019, size_dat_2020)
+size_dat_2yr$order <- as.integer(size_dat_2yr$order)
+size_dat_2021$altitude <- as.numeric(size_dat_2021$altitude)
+size_dat_2021$lat <- as.numeric(size_dat_2021$lat)
+size_dat_3yr <- full_join(size_dat_2yr, size_dat_2021)
+#View(size_dat_3yr)
+
+size_dat_3yr <- size_dat_3yr %>% 
+                  rename(length_ft = length,
+                         length = length_m,
+                         tagged = tagged.)
+
+write.csv(size_dat_3yr, "size_dat_3yr.csv")
+```
+
+### New 3yr df with size of each unique shark
+(1 row = 1 shark, daily data is repeated for days where multiple sharks were observed)
+```{r}
+size_dat_3yr <- read.csv("size_dat_3yr.csv")
+
+size_dat_unique <- size_dat_3yr %>%
+                    filter(unique == "Y") %>% 
+                    mutate(year = year(date))
+
+nrow(size_dat_unique)
+# 833 sightings (as of 10/25/21)
+
+joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
+#View(joined_3yr)
+```
+
+## Adding size classes to daily 3yr dataframe
+```{r}
+size_classed_3yr <- joined_3yr %>%
+  filter(!is.na(length)) %>% 
+  group_by(date) %>%
+  dplyr::summarize(juvenile = sum(length < 3), 
+                   adult = sum(length >= 3))
+
+#View(size_classed_3yr)
+
+ggplot(data = size_classed_3yr, aes(x = adult)) +
+  geom_bar()
+#crazy outlier on 4/30/2021
+
+daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
+
+daily_3yr_dat <- daily_3yr_dat  %>%
+  mutate(juvenile_density = juvenile/(transect_effort + manual_effort)) %>%
+  mutate(adult_density = adult/(transect_effort + manual_effort))
+```
+
+## Adding wharf data
+```{r}
+wharf_dat <- read.csv("data_raw/wharf_dat.csv")
+
+View(wharf_dat)
+
+wharf_dat <- wharf_dat %>% 
+              mutate(datetime = as_datetime(time)) %>% 
+              mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
+              mutate(date_hour = round_date(datetime, "hour")) %>% 
+              select(c(-1, -3, -5, -7, -9)) %>% 
+              group_by(date_hour) %>% 
+              summarize_at(vars(1:4), mean, na.rm = TRUE)
+
+daily_3yr_dat <- read.csv("daily_3yr_dat.csv")
+daily_3yr_dat$date_hour <- as_datetime(daily_3yr_dat$date_hour)
+daily_3yr_dat <- left_join(daily_3yr_dat, wharf_dat, by = "date_hour")
+daily_3yr_dat <- daily_3yr_dat %>% 
+  rename(wharf_temp = temperature)
+```
+
+## Tidying 3-year data
+```{r}
+str(daily_3yr_dat)
+View(daily_3yr_dat)
+
+daily_3yr_dat <- daily_3yr_dat %>% 
+  select(-c(1, 31, 39:42, 48, 76))
+```
+
+## Dataframe without 2019
+```{r}
+dat_no_19 <- daily_3yr_dat %>% 
+  filter(year(transect_datetime) != 2019)
+```
+
+===========================================================================================
+
+# Exploratory Visualizations
+* Older individual year visualizations are below 3yr visualizations
+
+## 3yr abundance visualizations
+```{r}
+daily_3yr_dat <- full_join(dat_2019, dat_2020)
+#this isn't the "real" 3 yr dataset I'll use - see above
+yearly_abund_summary <- daily_3yr_dat %>% 
+  group_by(year) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE),
+            max = max(total_unique, na.rm = TRUE))
+yearly_abund_summary
+
+daily_3yr_dat %>% 
+  group_by(year) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE),
+            max = max(total_unique, na.rm = TRUE)) %>% 
+  ggplot(aes(x = year, y = mean)) +
+    geom_bar(stat = "identity") +
+    geom_point(aes(y = max))
+  
+```
+
+## 3yr environmental variable visualizations
+```{r}
+daily_3yr_dat %>% 
+  gather("data", "value", WDIR:WTMP) %>% 
+  ggplot(aes(x = value)) +
+    geom_histogram() +
+    facet_wrap(~data, scales = "free")
+
+daily_3yr_dat %>%
+ ggplot(aes(x = wharf_temp, y = WTMP)) +
+  geom_point()
+
+wharf_channel_temp_mod <- lm(WTMP ~ wharf_temp, data = daily_3yr_dat)
+summary(wharf_channel_temp_mod)
+# r2 = 0.43, p < 0.001
+
+daily_3yr_dat %>%
+ ggplot(aes(x = ((9/5)*(wharf_temp) + 32), y = water_temp_padaro)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  coord_cartesian(xlim = c(58, 70))
+
+wharf_padaro_temp_mod <- lm(((9/5)*(wharf_temp) + 32) ~ water_temp_padaro, data = daily_3yr_dat)
+summary(wharf_padaro_temp_mod)
+#r2 = 0.69, p < 0.001
+```
+
+# Correlations of Abundance with Environmental Variables
+
+### Channel Water Temp
+```{r}
+dat_no_19 %>% 
+  ggplot(aes(x = WTMP)) +
+    geom_histogram(binwidth = 0.5)
+
+dat_no_19 %>% 
+  filter(total_unique != 0) %>% 
+  ggplot(aes(x = WTMP, y = total_unique)) +
+    geom_point()
+
+temp_mod <- lm(log1p(total_unique) ~ WTMP, data = (daily_3yr_dat %>% filter(total_unique != 0)))
+summary(temp_mod)
+# no linear relationship between channel water temp and total unique
+plot(temp_mod)
+
+temp_mod_transect <- 
+
+```
+
+### Wharf Water Temp
+```{r}
+daily_3yr_dat %>% 
+  ggplot(aes(x = wharf_temp)) +
+    geom_histogram(binwidth = 0.5)
+
+daily_3yr_dat %>% 
+  filter(total_unique != 0) %>% 
+  ggplot(aes(x = wharf_temp, y = total_unique)) +
+    geom_point()
+
+temp_mod <- lm(log(total_unique) ~ wharf_temp, data = (daily_3yr_dat %>% filter(total_unique != 0)))
+summary(temp_mod)
+plot(temp_mod)
+
+temp_mod_0 <- lm(log1p(total_unique) ~ wharf_temp, data = daily_3yr_dat)
+summary(temp_mod_0)
+plot(temp_mod)
+
+#no linear relationship between wharf temp and total unique (with or without total = 0)
+
+daily_3yr_dat <- mutate(daily_3yr_dat, wharf_temp2 = (wharf_temp)^2)
+
+temp_mod2 <- lm(log(total_unique) ~ wharf_temp + wharf_temp2, data = (daily_3yr_dat %>% filter(total_unique != 0)))
+summary(temp_mod2)
+
+temp_mod2_0 <- lm(log1p(total_unique) ~ wharf_temp + wharf_temp2, data = daily_3yr_dat)
+summary(temp_mod2_0)
+
+#no quadratic relationship between wharf temp and total unique (with or without total = 0)
+
+daily_3yr_dat %>%
+  filter(year(transect_datetime) == 2020) %>% 
+  filter(total_unique != 0) %>% 
+  ggplot(aes(x = wharf_temp, y = total_unique)) +
+    geom_point()
+
+daily_3yr_dat %>% 
+  #filter(transect_total_density != 0) %>% 
+  ggplot(aes(x = wharf_temp, y = transect_total_density)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+daily_3yr_dat %>% 
+  filter(manual_total_density != 0) %>% 
+  ggplot(aes(x = wharf_temp, y = manual_total_density)) +
+    geom_point() +
+    geom_smooth(method = "loess")
+```
+
+### Padaro Water Temp
+```{r}
+daily_3yr_dat %>% 
+  ggplot(aes(x = water_temp_bucket)) +
+    geom_histogram(binwidth = 0.5)
+
+daily_3yr_dat %>% 
+  #filter(total_unique != 0) %>% 
+  ggplot(aes(x = water_temp_bucket, y = log1p(total_unique))) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE)
+ggsave("plots/bucket_lm_plot.png")
+
+temp_mod <- lm(log(total_unique) ~ water_temp_bucket, data = (daily_3yr_dat %>% filter(total_unique != 0)))
+summary(temp_mod)
+plot(temp_mod)
+
+temp_mod_0 <- lm(log1p(total_unique) ~ water_temp_bucket, data = daily_3yr_dat)
+summary(temp_mod_0)
+plot(temp_mod_0)
+
+# significant linear relationship between padaro temp and total unique (with or without total = 0)
+
+daily_3yr_dat <- mutate(daily_3yr_dat, water_temp_bucket2 = (water_temp_bucket)^2)
+
+temp_mod2 <- lm(log(total_unique) ~ water_temp_bucket + water_temp_bucket2, data = (daily_3yr_dat %>% filter(total_unique != 0)))
+summary(temp_mod2)
+
+temp_mod2_0 <- lm(log1p(total_unique) ~ water_temp_bucket + water_temp_bucket2, data = daily_3yr_dat)
+summary(temp_mod2_0)
+
+#no quadratic relationship between padaro temp and total unique (with or without total = 0)
+
+daily_3yr_dat %>%
+  filter(year(transect_datetime) == 2020) %>% 
+  filter(total_unique != 0) %>% 
+  ggplot(aes(x = water_temp_bucket, y = total_unique)) +
+    geom_point()
+
+daily_3yr_dat %>% 
+  #filter(transect_total_density != 0) %>% 
+  ggplot(aes(x = water_temp_bucket, y = transect_total_density)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+daily_3yr_dat %>% 
+  filter(manual_total_density != 0) %>% 
+  ggplot(aes(x = water_temp_bucket, y = manual_total_density)) +
+    geom_point() +
+    geom_smooth(method = "loess")
+```
+
+### Swell
+```{r}
+daily_3yr_dat %>% 
+  ggplot(aes(x = WVHT_m)) +
+    geom_histogram(binwidth = 0.1)
+
+dat_no_19 %>%
+  ggplot(aes(x = total_unique)) +
+    geom_histogram(binwidth = 1)
+
+dat_no_19 %>% 
+  filter(total_unique != 0) %>% 
+  ggplot(aes(x = WVHT_m, y = total_unique)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE)
+ggsave("plots/wvht_lm_plot.png")
+
+wvht_mod <- lm(log1p(total_unique) ~ log(WVHT_m), data = (dat_no_19))
+summary(wvht_mod)
+# highly significant correlation between wave height and abundance, r2 = 0.15
+#slope is negative (see predictions below)
+plot(wvht_mod)
+
+shapiro.test(dat_no_19 %>% mutate(total_unique = log1p(total_unique)) %>% .$total_unique)
+# not normal even w/ log transformation
+dat_no_19 %>% 
+  filter(total_unique > 0) %>% 
+  #mutate(total_unique = log10(total_unique)) %>% 
+  ggplot(aes(x = total_unique)) +
+    geom_histogram()
+
+shapiro.test(dat_no_19 %>%  mutate(WVHT_m = log(WVHT_m)) %>% .$WVHT_m)
+# normal w/ log transformation
+
+wvht_sim <- simulateResiduals(fittedModel = wvht_mod, plot = F, n = 1000)
+testResiduals(wvht_sim, plot = T)
+#looks good
+predict(wvht_mod, data.frame(WVHT_m = 1))
+# 0.5 m swell = 1.41 individuals, 1 m swell = 0.78, 1.5 m swell = 0.40, 2 m swell = 0.14
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = MWD)) +
+    geom_histogram(binwidth = 5)
+
+dat_no_19 %>% 
+  ggplot(aes(x = MWD, y = total_unique)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+wvdir_mod <- lm(log1p(total_unique) ~ MWD, data = (dat_no_19))
+summary(wvdir_mod)
+```
+
+### Other
+```{r}
+daily_3yr_dat %>% 
+  #filter(total_unique != 0) %>% 
+  ggplot(aes(x = pressure, y = total_unique)) +
+    geom_point()
+
+daily_3yr_dat %>% 
+  #filter(total_unique != 0) %>% 
+  ggplot(aes(x = salinity, y = total_unique)) +
+    geom_point()
+
+daily_3yr_dat %>% 
+  filter(total_unique != 0) %>% 
+  ggplot(aes(x = chlorophyll, y = total_unique)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+```
+
+
+## 2019 Time Series of Transect Data with 8 ft. cutoff
+```{r}
+dat_2019 %>% 
+  dplyr::slice(1:103) %>%
+  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>%
+  filter(transect_total != 0) %>% 
+  dplyr::select(Date, Small, Large) %>% 
+  gather("Size", "Abundance", 2:3) %>%
+  pad(interval = "day", start_val = as.Date("2019-05-30")) %>%
+  replace_na(list(Size = "DNF", Abundance = -0.1)) %>%
+  ggplot(aes(x = Date, y = Abundance)) +
+    geom_bar(aes(fill = Size), stat = "identity") +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b %e",
+                 limits = c(as.Date("2019-08-15"), as.Date("2019-12-06")))+
+    scale_y_continuous(breaks = 1:7, limits = c(-0.1, 10)) +
+    scale_fill_manual(values = c("black", "red3", "dodgerblue4"), "") + theme_wsj() + 
+    theme(plot.title = element_text(size=40), legend.text = element_text(size = 16),
+          axis.text = element_text(size = 16)) +
+    labs(title = "2019 Great White Shark Abundance, 5/30 - 11/22")
+ggsave("plots/wsj_abund_plot_2019.png", width = 16, height = 9)
+```
+
+## Effort over Time, 2020
+```{r}
+dat_2020 %>% 
+  ggplot(aes(x = date, y = manual_area_km2)) +
+    geom_bar(stat = "identity")
+```
+
+## Abundance Over Time, 2020
+```{r}
+dat_2020 %>% 
+  ggplot(aes(x = date, y = total_unique)) +
+    geom_point() +
+    geom_smooth()
+
+dat_2020 %>% 
+  dplyr::rename(Date = date, Small = small_unique, Large = large_unique) %>% 
+  dplyr::select(Date, Small, Large) %>% 
+  slice(23:nrow(dat_2020)) %>%
+  gather("Size", "Abundance", 2:3) %>%
+  pad(interval = "day", start_val = as.Date("2020-06-24")) %>%
+  replace_na(list(Size = "DNF", Abundance = -0.1)) %>%
+  ggplot(aes(x = Date, y = Abundance)) + 
+    geom_bar(aes(fill = Size), stat = "identity") +
+    scale_x_date(date_breaks = "3 weeks", date_labels = "%b %e",
+                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
+    scale_y_continuous(breaks = 1:12) +
+    scale_fill_manual(values = c("black", "red3", "dodgerblue4"), "") + theme_wsj() + theme(plot.title = element_text(size = 40), legend.text = element_text(size = 16), axis.text = element_text(size = 12)) +
+    labs(title = "2020 Great White Shark Abundance, 6/24 - 12/18")
+
+ggsave("plots/wsj_abund_plot.png", width = 16, height = 9)
+
+#rolling average, right-aligned 7-day window, total transect density
+dat_2020 %>%
+  dplyr::rename(Date = date, Transects = transect_total) %>% 
+  dplyr::select(Date, Transects) %>% 
+  slice(23:nrow(dat_2020)) %>%
+  filter(!is.na(Transects)) %>%
+  ggplot(aes(x = Date, y = rollmean(Transects, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
+    geom_line(color = "red3", size = 2) +
+    scale_x_date(date_breaks = "2 weeks", date_labels = "%b %e", limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
+    scale_y_continuous(breaks = seq(from = 0, to = 2.5, by = 0.5)) +
+    theme_classic() +
+    theme(legend.text = element_text(size = 16), axis.text = element_text(size = 12)) +
+    labs(y = bquote('Individuals'%.%'km'^-2%.%'min'^-1))
+# 0.17 is survey area in km^2 and 9.6 is duration of survey in minutes
+
+ggsave("plots/2020_abund_plot.png", width = 7, height = 3)
+
+#rolling average, right-aligned 7-day window, size-classed transect density (used for GRFP, see updated version below)
+dat_2020 %>% 
+  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
+  dplyr::select(Date, Small, Large) %>% 
+  slice(23:nrow(dat_2020)) %>%
+  filter(!is.na(Small)) %>%
+  gather("Size", "Abundance", 2:3) %>%
+  ggplot(aes(x = Date, y = rollmean(Abundance, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
+    geom_line(aes(color = Size), size = 1.5) +
+    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b %y",
+                 limits = c(as.Date("2020-06-27"), as.Date("2020-10-10")))+
+    scale_y_continuous(breaks = seq(from = 0, to = 2, by = 0.25)) +
+    theme_classic() +
+    theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size = 14),
+          axis.title = element_text(size = 14),
+          axis.text = element_text(size = 12),
+          plot.caption = element_text(size = 14, hjust = 0.2)) +
+    labs(y = bquote('Individuals'%.%'km'^-2%.%'min'^-1), caption = "Figure 1. Seven-day rolling mean of size-classed density of white sharks at \n              Padaro Beach aggregation zone from 6/27/2020 to 10/10/2020.") +
+    scale_color_manual(labels = c(bquote(''>='8 ft'), bquote(''< '8 ft')),values = c("red3", "dodgerblue4"))
+ggsave("plots/grfp_abund_plot_sized.png", width = 7, height = 3)
+
+#rolling average, right-aligned 7-day window, size-classed transect density (all 2020 data)
+dat_2020 %>% 
+  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
+  dplyr::select(Date, Small, Large) %>% 
+  slice(23:nrow(dat_2020)) %>%
+  filter(!is.na(Small)) %>%
+  gather("Size", "Abundance", 2:3) %>%
+  ggplot(aes(x = Date, y = rollmean(Abundance, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
+    geom_line(aes(color = Size), size = 1.5) +
+    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b %y",
+                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
+    scale_y_continuous(breaks = seq(from = 0, to = 2, by = 0.25)) +
+    theme_classic() +
+    theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size = 14),
+          axis.title = element_text(size = 14),
+          axis.text = element_text(size = 12),
+          plot.caption = element_text(size = 14, hjust = 0.2)) +
+    labs(y = bquote('Individuals'%.%'km'^-2%.%'min'^-1), caption = "Figure 1. Seven-day rolling mean of size-classed density of white sharks at \n              Padaro Beach aggregation zone from 6/27/2020 to 12/11/2020.") +
+    scale_color_manual(labels = c(bquote(''>='8 ft'), bquote(''< '8 ft')),values = c("red3", "dodgerblue4"))
+
+ggsave("plots/2020_abund_plot_sized.png", width = 7, height = 3)
+
+#rolling average, right-aligned 7-day window, small sharks only
+dat_2020 %>% 
+  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
+  dplyr::select(Date, Small, Large) %>% 
+  slice(23:nrow(dat_2020)) %>%
+  filter(!is.na(Small)) %>%
+  gather("Size", "Abundance", 2:3) %>%
+  filter(Size == "Small") %>% 
+  ggplot(aes(x = Date, y = rollmean(Abundance, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
+    geom_line(aes(color = Size), size = 1.5) +
+    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b %y",
+                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
+    scale_y_continuous(breaks = seq(from = 0, to = 2, by = 0.25))
+
+#plotting time series of abundance by size, excluding days with no sharks
+dat_2020 %>% 
+  dplyr::filter(transect_total != 0) %>% 
+  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
+  dplyr::select(Date, Small, Large) %>% 
+  filter(!is.na(Small)) %>%
+  gather("Size", "Abundance", 2:3) %>%
+  ggplot(aes(x = Date, y = Abundance)) + 
+    geom_point(aes(color = Size), size = 1.5) +
+    geom_smooth(aes(color = Size), method = "lm", se = FALSE) +
+    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b",
+                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))
+```
+
+## Basic size class visualizations
+```{r}
+#View(size_classed_2020)
+
+sum(size_classed_2020$juvenile)
+#233 juvenile/YOY
+sum(size_classed_2020$adult)
+#29 adult/sub-adult
+
+dat_2020_final %>% 
+  gather("Sizeclass", "Abundance", juvenile:adult_density) %>% 
+  ggplot(aes(x = Sizeclass, y = Abundance)) +
+    geom_bar(stat = "identity")
+
+sum(dat_2020_final$juvenile, na.rm = TRUE)/sum(dat_2020_final$adult, na.rm = TRUE)
+# Eight times as many juveniles as adults
+
+sum(dat_2020_final$juvenile_density, na.rm = TRUE)/sum(dat_2020_final$adult_density, na.rm = TRUE)
+# Juveniles have 8.5 times the average density
+```
+
+## Size-classed time series (Abundance and Density)
+```{r}
+dat_2020_final %>% 
+  ggplot(aes(x = week(datetime.x))) +
+    geom_bar(aes(y = juvenile), stat = "identity", fill = "dodgerblue") +
+    geom_bar(aes(y = adult), stat = "identity", fill = "red4") +
+    labs(y = "Abundance", x = "Date")
+
+dat_2020_final %>% 
+  ggplot(aes(x = week(datetime.x))) +
+    geom_bar(aes(y = juvenile_density), stat = "identity", fill = "dodgerblue") +
+    geom_bar(aes(y = adult_density), stat = "identity", fill = "red4") +
+    labs(y = "Density (individuals/km2/min)", x = "Date")
+```
+
+## Morning vs afternoon abundance
+```{r}
+daily_3yr_dat %>%
+  filter(hh < 12) %>% 
+  drop_na(total_unique) %>% 
+  dplyr::summarize(mean = mean(total_unique), days = n()) 
+
+daily_3yr_dat %>% 
+  filter(hh >= 12) %>% 
+  drop_na(total_unique) %>% 
+  dplyr::summarize(mean = mean(total_unique), days = n()) 
+
+dat_2020 %>% 
+  ggplot(aes(x = hms::as_hms(datetime), y = total_unique)) +
+    geom_point()
+
+dat_2020 %>% 
+  ggplot(aes(x = hour(datetime))) +
+    geom_histogram(bins = 6, color = "white")
+ggsave("plots/2020_time_histogram.png", width = 7, height = 5)
+
+dat_2019 %>% 
+  ggplot(aes(x = hour(datetime))) +
+    geom_histogram(binwidth = 1, color = "white")
+ggsave("plots/2019_time_histogram.png", width = 7, height = 5)
+
+View(dat_2021)
+
+daily_3yr_dat %>%
+  #filter(month(datetime) > 6, month(datetime) < 8) %>% 
+  dplyr::group_by(hh) %>%
+  drop_na(total_unique) %>%
+  dplyr::summarize(Abundance = list(mean_se(total_unique))) %>%
+  unnest(Abundance) %>% 
+  dplyr::rename(Hour = 1, Abundance = y) %>% 
+  ggplot(aes(x = Hour, y = Abundance)) +
+    geom_bar(stat = "identity") +
+    #geom_errorbar(aes(ymax = ymax, ymin = ymin), size = 0.5, width = 0.2) +
+    geom_vline(xintercept = 11.5, size = 1) +
+    annotate("text", label = "Morning mean: 1.66 (n = 82)", x = 9, y = 3.5) +
+    annotate("text", label = "Afternoon mean: 3.19 (n = 70)", x = 15, y = 5.2) +
+    theme_classic()
+ggsave("plots/3yr_am_vs_pm.png", width = 7, height = 5)
+```
+
+## Channel water temperature vs manual density, 2020
+```{r}
+flights_plus_channel_dat_2020 %>%
+  #filter(manual_total_density != 0) %>% 
+  ggplot(aes(x = mean_wtemp_previous_24, y = manual_total_density)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+wtemp_quadratic <- lm(dat_2020_full$manual_total_density ~ dat_2020_full$mean_wtemp_previous_24 + dat_2020_full$wtemp_2)
+
+summary(wtemp_quadratic)
+
+plot(dat_2020_full$mean_wtemp_previous_24, fitted(dat_2020_full$manual_total_density ~ dat_2020_full$mean_wtemp_previous_24 + dat_2020_full$wtemp_2))
+```
+
+## 2020 Size-Classed Visualizations
+```{r}
+size_dat_2020 %>% 
+  filter(unique == "Y") %>% 
+  ggplot(aes(length)) +
+    geom_histogram(binwidth = 0.2, boundary = 0, closed = "left") +
+    stat_function(fun = function(x) 
+    dnorm(x, mean = mean(size_dat_2020$length), sd = sd(size_dat_2020$length)) * 0.2 * sum(!is.na(size_dat_2020$length)))
+
+size_dat_2020 %>% 
+  filter(unique == "Y") %>% 
+  ggplot(aes(x = length_m)) +
+    geom_histogram(binwidth = 0.2, boundary = 0, closed = "left") +
+    geom_vline(xintercept = 3, size = 1.5, color = "red3", linetype = "dashed") +
+    geom_vline(xintercept = mean(size_dat_2020$length_m, na.rm = TRUE),
+               size = 1.5, color = "dodgerblue") +
+    theme_classic() +
+    scale_x_continuous(name = "Length (m)", breaks = seq(from = -1, to = 5, by = 0.5))
+ggsave("plots/2020_size_histogram.png", width = 7, height = 6)
+
+size_dat_2020 %>%
+  drop_na(unique, size_class) %>% 
+  filter(unique == "Y") %>% 
+  ggplot(aes(x = week(date), fill = size_class)) +
+    geom_bar(position = "stack", stat = "count") +
+    scale_fill_manual(values = c("red3", "dodgerblue")) +
+    scale_x_continuous(name = "Week") +
+    theme_classic()
+ggsave("plots/2020_size_classed_time_series.png", width = 7, height = 4)
+```
+
+
+```{r}
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+Mode(size_dat_2020$length)
+
+size_dat_2020 %>% 
+  slice(1:201) %>% 
+   ggplot(aes(x = length))+
+    geom_histogram()
+
+size_dat_2020 %>% 
+  slice(1:201) %>% 
+  summarize(mean = mean(length, na.rm = TRUE))
+
+size_dat_2020 %>% 
+  slice(202:nrow(size_dat_2020)) %>% 
+   ggplot(aes(x = length))+
+    geom_histogram()
+
+size_dat_2020 %>% 
+  slice(202:nrow(size_dat_2020)) %>% 
+  summarize(mean = mean(length, na.rm = TRUE))
+
+dat_2020 %>% 
+  slice(1:86) %>% 
+  summarize(daily_avg = sum(total_unique, na.rm = TRUE)/86)
+
+dat_2020 %>% 
+  slice(86:nrow(dat_2020)) %>% 
+  summarize(daily_avg = sum(total_unique, na.rm = TRUE)/((nrow(dat_2020))-86))
+```
+
+## Size over Time
+
+### Individual years
+```{r}
+size_dat_2020 %>%
+  drop_na(length) %>%
+  filter(unique == "Y") %>% 
+  dplyr::group_by(date) %>% 
+  dplyr::summarize(mean_length = mean(length_m)) %>% 
+  ggplot(aes(x = date, y = mean_length)) + 
+    geom_point() +
+    geom_smooth()
+
+size_dat_2020 %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = date, y = length_m)) + 
+    geom_point() + 
+    geom_smooth()
+
+size_dat_2021 %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = date, y = length_m)) + 
+    geom_point() +
+    geom_smooth()
+```
+
+### Comparing size across years
+```{r}
+#faceted by year:
+size_dat_unique %>% 
+  ggplot(aes(x = yday(date), y = length)) +
+    geom_point() +
+    facet_grid(cols = vars(year(date)))
+
+#looking at one month only:
+size_dat_unique %>% 
+  filter(month(date) == 8) %>% 
+  ggplot(aes(x = yday(date), y = length)) +
+    geom_point() +
+    facet_grid(cols = vars(year(date)))
+
+#years overlaid:
+size_dat_unique %>% 
+  #filter(month(date) == c(7:9)) %>% 
+  ggplot(aes(x = yday(date), y = length)) +
+    geom_point(aes(color = as.factor(year)), alpha = 0.8) +
+    geom_smooth()
+    #geom_hline(yintercept = 3)
+ggsave("plots/size_3yrs.png")
+
+#years separated, violin plot, July-September:
+size_dat_unique %>% 
+  filter(month(date) == c(7:9)) %>% 
+  ggplot(aes(x = as.factor(year), y = length)) +
+    geom_violin(fill = "dodgerblue") #+
+    #geom_hline(yintercept = 3)
+ggsave("plots/size_violin_july-sept.png")
+
+#years separated, box plot:
+size_dat_unique %>% 
+  #filter(month(date) == c(7:9)) %>% 
+  ggplot(aes(x = as.factor(year), y = length)) +
+    geom_boxplot() #+
+    #geom_hline(yintercept = 3)
+ggsave("plots/size_3yrs_box.png")
+
+size_dat_unique %>% 
+  group_by(year) %>% 
+  summarize(min = min(length_ft, na.rm = TRUE),
+            max = max(length_ft, na.rm = TRUE),
+            median = round(mean(length_ft, na.rm = TRUE), digits = 1),
+            "Juveniles" = sum(size_class == "Juvenile", na.rm = TRUE),
+            "Adults" = sum(size_class == "Adult", na.rm = TRUE),
+            "Juveniles per Adult" = sum(size_class == "Juvenile", na.rm = TRUE)/
+                                    sum(size_class == "Adult", na.rm = TRUE))
+
+yearly_size_summary <- size_dat_unique %>% 
+  group_by(year) %>% 
+  summarize("Mean TL" = mean(length, na.rm = TRUE),
+            min = min(length, na.rm = TRUE),
+            max = max(length, na.rm = TRUE),
+            "Juveniles" = sum(size_class == "Juvenile", na.rm = TRUE),
+            "Adults" = sum(size_class == "Adult", na.rm = TRUE),
+            "Juveniles per Adult" = 
+              sum(size_class == "Juvenile", na.rm = TRUE)/
+              sum(size_class == "Adult", na.rm = TRUE)) %>% 
+
+  gt() %>% 
+    fmt_number(2:7, decimals = 1) %>% 
+    fmt_number(5:6, decimals = 0) %>% 
+    cols_merge_range(3,4) %>% 
+    cols_label("year" = "Year", "min" = "Range")
+gtsave(yearly_size_summary, "plots/yearly_size_summary_table.png")
+```
+
+## Haphazard vs Transect Visualizations
+```{r}
+dat_2020 %>% 
+  filter(total_unique > 0) %>% 
+  filter(!is.na(manual_total), !is.na(transect_total)) %>% 
+  dplyr::rename(Date = date, Haphazard = manual_total, Transect = transect_total) %>% 
+  dplyr::select(Date, Haphazard, Transect) %>%
+  gather("Flight", "Abundance", 2:3) %>%
+  pad(interval = "day", start_val = as.Date("2020-06-24")) %>%
+  replace_na(list(Flight = "DNF", Abundance = -0.1)) %>%
+  ggplot(aes(x = Date, y = Abundance)) + 
+    geom_bar(aes(fill = Flight), stat = "identity", position = "dodge") +
+    scale_x_date(date_breaks = "1 week", date_labels = "%b %e", limits = c(as.Date("2020-06-27"), as.Date("2020-12-15")))+
+    scale_y_continuous(breaks = 1:10) +
+    scale_fill_manual(values = brewer.pal(8, "Dark2")[c(8,1,2)], "") + theme_wsj() + theme(plot.title = element_text(size=40), legend.text = element_text(size = 16), axis.text = element_text(size = 16)) +
+    labs(title = "2020 Great White Shark Abundance, 6/24 - DD/MM")
+ggsave("plots/wsj_survey_comp_plot.png", width = 16, height = 9)
+
+daily_3yr_dat %>%
+  select(transect_total, manual_unique) %>% 
+  dplyr::rename(Transect = transect_total, Manual = manual_unique) %>% 
+  gather("Method", "Abundance", 1:2) %>%
+  drop_na() %>% 
+  group_by(Method) %>% 
+  dplyr::summarize(Mean_Abundance = list(mean_se(Abundance))) %>%
+  unnest(Mean_Abundance) %>% 
+    ggplot(aes(x = Method, y = y, fill = Method)) +
+      geom_bar(stat = "identity") +
+      geom_errorbar(aes(ymax = ymax, ymin = ymin), size = 1.5, width = 0.2) +
+      scale_fill_manual(values = c("red3", "dodgerblue")) +
+      scale_y_continuous(name = "Mean Abundance") +
+      theme_classic() +
+      theme(legend.position = "none") +
+      theme(axis.title = element_text(size = 14), axis.text = element_text(size = 14))
+      
+ggsave("plots/3yr_methods_abundance.png", width = 7, height = 7)
+
+daily_3yr_dat %>%
+  select(transect_total_density, manual_total_density) %>% 
+  dplyr::rename(Transect = transect_total_density, Manual = manual_total_density) %>% 
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>% 
+  group_by(Method) %>% 
+  dplyr::summarize(Mean_Density = list(mean_se(Density))) %>%
+  unnest(Mean_Density) %>% 
+    ggplot(aes(x = Method, y = y, fill = Method)) +
+      geom_bar(stat = "identity") +
+      geom_errorbar(aes(ymax = ymax, ymin = ymin), size = 1.5, width = 0.2) +
+      scale_fill_manual(values = c("red3", "dodgerblue")) +
+      scale_y_continuous(name = "Mean Density (individuals/km2/min)") +
+      theme_classic() +
+      theme(legend.position = "none") +
+      theme(axis.title = element_text(size = 14), axis.text = element_text(size = 14))
+  
+ggsave("plots/3yr_methods_density.png", width = 7, height = 7)
+
+daily_3yr_dat %>%
+  mutate(transect_frequency = transect_total/transect_duration_min,
+         manual_frequency = manual_unique/manual_duration_min) %>% 
+  select(transect_frequency, manual_frequency) %>%
+  dplyr::rename(Transect = transect_frequency, Manual = manual_frequency) %>%
+  gather("Method", "Frequency", 1:2) %>%
+  drop_na() %>% 
+  group_by(Method) %>% 
+  dplyr::summarize(Mean_Freq = list(mean_se(Frequency))) %>%
+  unnest(Mean_Freq) %>% 
+    ggplot(aes(x = Method, y = y, fill = Method)) +
+      geom_bar(stat = "identity") +
+      geom_errorbar(aes(ymax = ymax, ymin = ymin), size = 1.5, width = 0.2) +
+      scale_fill_manual(values = c("red3", "dodgerblue")) +
+      scale_y_continuous(name = "Mean Frequency (individuals/min)") +
+      theme_classic() +
+      theme(legend.position = "none") +
+      theme(axis.title = element_text(size = 14), axis.text = element_text(size = 14))
+
+# Density WITHOUT time:
+dat_2020 %>%
+  mutate(transect_density = transect_total/transect_area_km2,
+         manual_density = manual_unique/manual_area_km2) %>% 
+  select(transect_density, manual_density) %>%
+  dplyr::rename(Transect = transect_density, Manual = manual_density) %>%
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>% 
+  group_by(Method) %>% 
+  dplyr::summarize(Mean_Dens = list(mean_se(Density))) %>%
+  unnest(Mean_Dens) %>% 
+    ggplot(aes(x = Method, y = y, fill = Method)) +
+      geom_bar(stat = "identity") +
+      geom_errorbar(aes(ymax = ymax, ymin = ymin), size = 1.5, width = 0.2) +
+      scale_fill_manual(values = c("red3", "dodgerblue")) +
+      scale_y_continuous(name = "Mean Density (individuals/km2)") +
+      theme_classic() +
+      theme(legend.position = "none") +
+      theme(axis.title = element_text(size = 14), axis.text = element_text(size = 14))
+```
+
+## Comparative Analysis of Methods
+```{r}
+daily_3yr_dat %>%
+  select(transect_total, manual_unique) %>%
+  dplyr::rename(Transect = transect_total, Manual = manual_unique) %>%
+  gather("Method", "Density", 1:2) %>%
+  group_by(Method) %>% 
+  summarize(mean = list(mean_se(Density))) %>% 
+  unnest(mean) %>%
+  mutate(se = ymax - y) %>% 
+  View()
+
+daily_3yr_dat %>%
+  select(transect_total, manual_unique) %>%
+  dplyr::rename(Transect = transect_total, Manual = manual_unique) %>%
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>%
+  t.test(Density ~ Method, .)
+  
+shapiro.test(daily_3yr_dat$transect_total_density) 
+shapiro.test(daily_3yr_dat$manual_unique) 
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = transect_total_density)) +
+    geom_density()
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = manual_total_density)) +
+    geom_density()
+
+# Abundance
+daily_3yr_dat %>%
+  select(transect_total, manual_unique) %>%
+  dplyr::rename(Transect = transect_total, Manual = manual_unique) %>%
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>%
+  wilcox.test(Density ~ Method, ., conf.int = TRUE)
+
+# Manual abundance (mean = 2.3, SE = 0.20) was higher than transect abundance (mean = 1.3, SE = 0.14, p < 0.001)
+
+# Effort-Corrected Density:
+daily_3yr_dat %>%
+  select(transect_total_density, manual_total_density) %>%
+  dplyr::rename(Transect = transect_total_density, Manual = manual_total_density) %>%
+  gather("Method", "Density", 1:2) %>%
+  group_by(Method) %>% 
+  summarize(mean = list(mean_se(Density))) %>% 
+  unnest(mean) %>%
+  mutate(se = ymax - y) %>% 
+  View()
+
+daily_3yr_dat %>%
+  select(transect_total_density, manual_total_density) %>%
+  dplyr::rename(Transect = transect_total_density, Manual = manual_total_density) %>%
+  gather("Method", "Density", 1:2) %>%
+  group_by(Method) %>%
+  summarize(mean = list(mean_se(Density))) %>% 
+  unnest(mean) %>% 
+  rename("Density" = y) %>% 
+  ggplot(aes(x = Method, y = Density)) +
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymax = ymax, ymin = ymin), width = 0.4)
+ggsave("plots/methods_comp_plot.png")
+
+daily_3yr_dat %>%
+  select(transect_total_density, manual_total_density) %>%
+  dplyr::rename(Transect = transect_total_density, Manual = manual_total_density) %>%
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>%
+  wilcox.test(Density ~ Method, ., conf.int = TRUE)
+
+# Manual effort-corrected density (mean = 0.64, SE = 0.1) was higher than transect abundance (mean = 0.48, SE = 0.06, p < 0.001)
+
+# Raw Density:
+dat_2020 %>%
+  mutate(transect_density = transect_total/transect_area_km2,
+         manual_density = manual_unique/manual_area_km2) %>% 
+  select(transect_density, manual_density) %>%
+  dplyr::rename(Transect = transect_density, Manual = manual_density) %>%
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>% 
+  group_by(Method) %>% 
+  dplyr::summarize(Mean_Dens = list(mean_se(Density))) %>%
+  unnest(Mean_Dens)
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = transect_total/transect_area_km2)) +
+    geom_density()
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = manual_unique/manual_area_km2)) +
+    geom_density()
+
+dat_2020 %>%
+  mutate(transect_density = transect_total/transect_area_km2,
+         manual_density = manual_unique/manual_area_km2) %>% 
+  select(transect_density, manual_density) %>%
+  dplyr::rename(Transect = transect_density, Manual = manual_density) %>%
+  gather("Method", "Density", 1:2) %>%
+  drop_na() %>%
+  wilcox.test(Density ~ Method, ., conf.int = TRUE)
+## Manual density (mean = 7.12, SE = 1.05) was not higher than transect density (mean = 6.78, SE = 0.06, p < 0.001)
+```
+
+## Heatmaps
+
+### All 3 years
+```{r}
+size_dat_3yr %>%
+  filter(video == "manual" | video == "manual_1") %>% 
+  filter(unique == "Y") %>%
+  filter(!is.na(length)) %>% 
+  ggplot(aes(x = long, y = lat)) +
+    geom_point(aes(color = size_class)) +
+    geom_smooth()
+#follows a certain distance from the coastline
+
+size_dat_3yr %>%
+  filter(video == "manual" | video == "manual_1") %>%
+  filter(unique == "Y") %>%
+  filter(!is.na(length)) %>%
+  ggplot(aes(x = long, y = lat)) +
+    geom_hex(bins = 15) +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    theme_classic() +
+    theme(panel.background = element_rect(fill = "darkblue"))
+```
+
+### All Sharks, 2020
+```{r}
+size_dat_2020 %>% 
+  filter(unique == "Y") %>%
+  filter(!is.na(length)) %>% 
+  ggplot(aes(x = long, y = lat)) +
+    geom_point(aes(color = size_class))
+
+size_dat_2020 %>% 
+  filter(unique == "Y") %>%
+  filter(!is.na(length)) %>%
+  ggplot(aes(x = long, y = lat)) +
+  geom_hex(bins = 12) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+  theme_classic()
+ggsave("grfp_hexmap.png")
+
+register_google(key = "[AIzaSyDmz6xT3R938U6s5VWXuguMSq6ROr3X2KM]", write = TRUE)
+
+location <- c(-120, 34, -119, 35)
+
+carp <- get_map(location = location, source = "osm", zoom = 7)
+
+ggmap(carp) +
+  geom_hex(data = size_dat_2020, aes(x = long, y = lat), bins = 12) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+  theme_classic()
+```
+
+### Juveniles, 2020
+```{r}
+size_dat_2020 %>%
+  drop_na(lat, size_class) %>%
+  filter(size_class == "Juvenile") %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = long, y = lat)) +
+    geom_hex(bins = 12) +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    theme_classic() +
+    theme(panel.background = element_rect(fill = "black"))
+ggsave("plots/2020_juvenile_heatmap.png", width = 7, height = 6)
+```
+
+### Adults, 2020
+```{r}
+size_dat_2020 %>%
+  drop_na(lat, size_class) %>%
+  filter(size_class == "Adult") %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = long, y = lat)) +
+    geom_hex(bins = 12) +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    theme_classic() +
+    theme(panel.background = element_rect(fill = "black"))
+ggsave("plots/2020_adult_heatmap.png", width = 7, height = 6)
+
+mean(size_dat_2020$length_m, na.rm = TRUE)
+median(size_dat_2020$length, na.rm = TRUE)
+
+sum(size_dat_2020$size_class == "Adult" & size_dat_2020$unique == "Y", na.rm = "TRUE")/sum(size_dat_2020$unique == "Y", na.rm = "TRUE")
+```
+
+================================================================================================
+
+# Modelling
+
+## Factors affecting total manual density
+```{r}
+dat_no_19 <- daily_3yr_dat %>% 
+  filter(year(transect_datetime) != 2019) %>% 
+  mutate(hour = hour(transect_datetime))
+
+total_density_mod <- glmmTMB(manual_unique ~ offset(log(manual_effort)) + wharf_temp + hour, data = dat_no_19, family = poisson, ziformula = ~1)
+
+total_density_sim <- simulateResiduals(fittedModel = total_density_mod, plot = F, n = 1000)
+testResiduals(ratio_sim, plot = T)
+
+dredge(total_density_mod)
+#time of day, wharf temp, and manual effort are all predictors in best fit model, model without hour has weight of 0.234
+
+summary(total_density_mod)
+#hour significant, wharf temp not
+
+plot(allEffects(total_density_mod))
+```
+
+## Factors affecting ratio of juveniles to adults NOT WORKING
+```{r}
+dat_no_19 <- dat_no_19 %>% 
+  mutate(hour = hour(transect_datetime))
+
+View(dat_no_19)
+
+ratio_mod <- glmmTMB(cbind(manual_small, manual_large) ~ offset(log(manual_effort)) + wharf_temp + hour, data = dat_no_19, family = binomial)
+
+ratio_sim <- simulateResiduals(fittedModel = ratio_mod, plot = F, n = 1000)
+testResiduals(ratio_sim, plot = T)
+
+ratio_mod2 <- glmmTMB(cbind(manual_small, manual_large) ~ offset(log(manual_effort)) + wharf_temp, data = dat_no_19, family = binomial)
+
+AICctab(ratio_mod, ratio_mod2)
+
+dredge(ratio_mod)
+#not working?
+
+summary(ratio_mod)
+# hour significant, wharf temp not
+plot(allEffects(ratio_mod))
+
+summary(ratio_mod2)
+# higher AIC than temp + hour model
+
+emmeans(ratio_mod)
+```
+
+## Modelling Transect vs Manual abundance estimates
+```{r}
+
+
+```
+
+## Modelling Time of Day Effects on Abundance, 2020
+```{r}
+View(dat_2020_full)
+ggplot(aes(x = total_unique), data = dat_2020) +
+  geom_bar()
+
+diel_model <- glmmTMB(total_unique ~ hour(datetime.x) + mean_wtemp_previous_24 + WVHT_m + vis + beaufort, data = dat_2020_full, family = nbinom2)
+dredge(diel_model)
+
+diel_mod_1 <- glmmTMB(total_unique ~ mean_wtemp_previous_24 + WVHT_m + vis, data = dat_2020_full, family = nbinom2)
+
+fam_list <- list(family = alist(
+    binomial = binomial,
+    genpois = genpois,
+    poisson = poisson,
+    nbinom1 = nbinom1,
+    nbinom2 = nbinom2,
+    ))
+
+getAllTerms(diel_mod_1)
+
+dredge(diel_mod_1, fixed = ~ cond(mean_wtemp_previous_24) + cond(vis) + cond(WVHT_m), varying = fam_list)
+
+diel_mod <- update(diel_mod_1, family = nbinom1)
+dredge(diel_mod)
+
+summary(diel_mod)
+
+diel_simulationOutput <- simulateResiduals(fittedModel = diel_mod, n = 250)
+plotSimulatedResiduals(simulationOutput = diel_simulationOutput)
+testOverdispersion(diel_mod)
+
+plot(allEffects(diel_model), partial.residuals = TRUE)
+```
+
+## Abundance Histogram, 2020
+```{r}
+dat_2020 %>% 
+  #filter(total_unique != 0) %>%
+  gather("Size", "Abundance", 20:21) %>% 
+  ggplot(aes(x = Abundance, fill = Size)) +
+    geom_bar(position = "dodge") +
+    scale_x_continuous(breaks = 0:10) +
+    theme_classic()
+```
+
+## Comparing size between methods
+```{r}
+joined_2020 %>% 
+  filter(video.y == "outer") %>% 
+  summarize(mean = mean(length_m, na.rm = TRUE))
+# mean size on outer transect is 2.88
+
+joined_2020 %>% 
+  filter(video.y == "outer") %>%
+  nrow()
+# only 13 sharks seen in outer video?
+
+joined_2020 %>% 
+  filter(video.y == "inner") %>% 
+  summarize(mean = mean(length_m, na.rm = TRUE))
+# mean size on inner transect is 2.49
+
+joined_2020 %>% 
+  filter(video.y == "inner") %>%
+  nrow()
+# 65 sharks in inner video
+
+joined_2020 %>% 
+  filter(video.y != "manual") %>% 
+  summarize(mean = mean(length_m, na.rm = TRUE))
+#mean size for transect flights overall is 2.55
+
+joined_2020 %>% 
+  filter(video.y == "manual") %>% 
+  summarize(mean = mean(length_m, na.rm = TRUE))
+#mean size on manual flights in 2.43 - bias towards larger sharks in transect flights?
+
+#Comparing abundance estimates between methods:
+aov_method_abund_dat <- dat_2020 %>% 
+                      dplyr::select(date, transect_total, manual_unique) %>% 
+                      slice(23:nrow(dat_2020)) %>%
+                      filter(!is.na(transect_total)) %>%
+                      filter(!is.na(manual_unique)) %>%
+                      gather("method", "abundance", 2:3)
+
+aov_method_abund_2_dat <- dat_2020 %>% 
+                        dplyr::select(date, transect_total, haphazard_unique) %>% 
+                        slice(23:nrow(dat_2020)) %>%
+                        gather("method", "abundance", 2:3) %>% 
+                        filter(!is.na(abundance))
+
+aov_method_abund_dat_no_zero <- dat_2020 %>% 
+                      dplyr::select(date, transect_total, manual_unique) %>% 
+                      slice(23:nrow(dat_2020)) %>%
+                      filter(!is.na(transect_total)) %>%
+                      filter(!is.na(manual_unique)) %>%
+                      filter(transect_total != 0) %>% 
+                      filter(manual_unique != 0) %>%
+                      gather("method", "abundance", 2:3)
+
+pairwise.t.test(log1p(aov_method_abund_dat$abundance), aov_method_abund_dat$method)
+# p = 0.017
+# IMPORTANT: I'm not sure how the NAs affect this - First version removes all dates with an NA for either method, while second version only removes the method that has the NA. First version makes more sense to me.
+
+leveneTest(log1p(abundance) ~ method, data = aov_method_abund_dat)
+#approximately equal variances
+
+qqPlot(log1p(aov_method_abund_dat$abundance))
+# lol
+
+aov_method_abund_dat %>% 
+  ggplot(aes(x = abundance)) +
+    geom_histogram()
+
+pairwise.t.test(log1p(aov_method_abund_dat_no_zero$abundance), aov_method_abund_dat_no_zero$method)
+#p = 0.042
+
+leveneTest(abundance ~ method, data = aov_method_abund_dat_no_zero)
+# fine
+
+qqPlot(log(aov_method_abund_dat_no_zero$abundance))
+
+shapiro.test(aov_method_abund_dat_no_zero$abundance)
+
+#Comparing size estimates between methods:
+
+size_dat_unique <- size_dat_unique %>% 
+  mutate(method = ifelse(video == "manual", "manual", "transect"))
+
+pairwise.t.test(size_dat_unique$length_m, size_dat_unique$method)
+# p = 0.029
+
+leveneTest(length_m ~ method, data = size_dat_unique)
+#equal variances
+
+qqPlot(size_dat_unique$length_m)
+# lookin good
+
+shapiro.test(size_dat_unique$length_m)
+# hmm
+
+size_dat_unique %>% 
+  ggplot(aes(x = length_m)) +
+    geom_histogram()
+```
+
+
+## Water temperature (old)
+```{r}
+mean(flights$water_temp, na.rm=T)
+
+# number of days with each temp 
+ggplot(flights, aes(x=water_temp))+
+  geom_histogram(binwidth=0.5)+
+  geom_vline(xintercept=64.90645, color="red")
+
+# same as above but with channel temps 
+ggplot(flights, aes(x=water_temp_channel))+
+  geom_histogram(binwidth=0.5)+
+  geom_vline(xintercept=64.90645, color="red")
+
+# HOBO temp over time + shark data
+temp_plot <- ggplot(flights, aes(x=date, y=water_temp, group=beach))+
+  geom_line(size=0.5, linetype=5)+
+  #geom_line(aes(y=water_temp)) +
+  geom_hline(yintercept=64.90645, color="red") +
+  #geom_hline(yintercept=mean(flights$water_temp), color="blue")+
+  geom_smooth(se=T, color="blue", size=0.5)+
+  geom_point(aes(color=detection, shape=detection), size=2) +
+  scale_color_manual(values=c("black","forestgreen","red"))+
+  scale_shape_manual(values=c(4,19,19))+
+  theme_bw()
+temp_plot
+ggsave("temp_plot.png", width=10, height=7)
+
+# same as above but with channel temps
+ggplot(flights, aes(x=date, y=water_temp_channel, group=beach))+
+  geom_line(size=0.5, linetype=5)+
+  #geom_line(aes(y=water_temp_channel)) +
+  geom_hline(yintercept=64.90645, color="red") +
+  #geom_hline(yintercept=mean(flights$water_temp_channel), color="blue")+
+  geom_smooth(se=F, color="blue", size=0.5)+
+  geom_point(aes(color=detection, shape=detection), size=2) +
+  scale_color_manual(values=c("black","forestgreen","red"))+
+  scale_shape_manual(values=c(4,19,19))+
+  theme_bw()
+
+# Air and water temperature over time
+ggplot(temps.long, aes(x=date, y=temp, group=type, color=type))+
+  geom_line()+
+  geom_hline(yintercept=64.90645)
+
+#Air vs channel water temperature
+ggplot(flights, aes(x=air_temp, y=water_temp_channel))+
+  geom_point()+
+  coord_cartesian(xlim=c(55,80))+
+  geom_hline(yintercept=64.90645, color="red")+
+  stat_smooth(method=lm, se=F, fullrange=T)
+```
+
+## Wind
+```{r}
+wind_avg <- flights %>% ddply(.(wind_dir), summarize, mean=mean(wind_spd)) %>% na.omit(.)
+#View(wind_avg)
+
+# Average speed of each direction
+ggplot(wind_avg, aes(x=wind_dir, y=mean))+
+  geom_bar(stat="identity")+
+  coord_polar(theta="x", start=2.7, direction=-1)
+
+# Histogram of wind directions
+flights %>% drop_na("wind_dir") %>%
+  ggplot(., aes(x=wind_dir))+
+    geom_bar()+
+    coord_polar(theta="x",start=2.7, direction=-1)
+
+# Wind vs water temp
+ggplot(flights, aes(x=wind_spd..kts., y=water_temp))+
+  geom_point()+
+  geom_smooth(method="lm", se=F)
+
+# Wind vs sky
+ggplot(flights, aes(x=wind_spd, y=sky))+
+  geom_count()
+
+# Wind vs waves
+ggplot(flights, aes(x=wind_spd, y=swell))+
+  geom_jitter()+
+  geom_smooth(method=lm)
+```
+
+## Sky
+```{r}
+# sky condition vs detections/DNF
+ggplot(flights, aes(x=sky, fill=detection))+
+  geom_bar(position="stack")+
+  scale_fill_manual(values=c("black", "forestgreen", "red"))
+```
+
+
+## Visibility
+```{r}
+# beaufort vs total abundance
+dat_2020 %>% 
+  slice(23:73) %>%
+  group_by(beaufort) %>% 
+  summarize(mean = list(mean_se(total_unique))) %>%
+  unnest(mean) %>% 
+  ggplot(aes(x = beaufort, y = y) )+
+    geom_bar(stat = "identity") +
+    geom_errorbar(aes(ymax = ymax, ymin = ymin), width = 0.2)
+
+# vis vs total abundance
+dat_2020 %>% 
+  slice(23:73) %>%
+  group_by(vis) %>% 
+  summarize(mean = list(mean_se(total_unique))) %>%
+  unnest(mean) %>% 
+ggplot(aes(x = vis, y = y) )+
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymax = ymax, ymin = ymin), width = 0.2)
+```
+
+## Tide
+```{r}
+# tide over time + shark data
+ggplot(flights, aes(x=date, y=tide, group=beach))+
+  geom_line(size=0.5, linetype=2)+
+  geom_point(aes(color=detection, shape=detection), size=2) +
+  scale_color_manual(values=c("black","forestgreen","red"))+
+  scale_shape_manual(values=c(4,19,19))+
+  theme_bw()
+```
+
+# Detection analysis
+
+```{r}
+#count(flights, detection)
+ggplot(dat_2019, aes(y=wind_spd, x=detection))+
+  geom_point()+
+  geom_smooth(se=F)
+```
+
+## t-test of small vs large abundance, 2020
+```{r}
+aov_dat <- dat_2020 %>% 
+            dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
+            dplyr::select(Date, Small, Large) %>% 
+            slice(23:nrow(dat_2020)) %>%
+            filter(!is.na(Small)) %>%
+            gather("Size", "Abundance", 2:3)
+
+pairwise.t.test(aov_dat$Abundance, aov_dat$Size)
+
+leveneTest(Abundance ~ Size, data = aov_dat)
+```
+
+## t-test of small vs large abundance, 2021
+```{r}
+aov_dat <- dat_2021 %>% 
+            dplyr::rename(Date = date, Small = transect_small,
+                          Large = transect_large) %>% 
+            dplyr::select(Date, Small, Large) %>% 
+            slice(23:nrow(dat_2021)) %>%
+            filter(!is.na(Small)) %>%
+            gather("Size", "Abundance", 2:3)
+
+pairwise.t.test(aov_dat$Abundance, aov_dat$Size)
+
+leveneTest(Abundance ~ Size, data = aov_dat)
+```
+
+## GLMs to test effects of water temp and sky condition on detections
+```{r}
+flights_DNF.rm <- filter(flights, detection!="DNF")
+det_mod <- glm(detection~water_temp*sky,data=flights_DNF.rm,family=binomial(link="logit"),na.action="na.fail") 
+dredge(det_mod)
+```
+* best model is null model, followed by ~wind_gust, then ~wind_speed
+
+```{r}
+DNF_1 <- glm(detection~wind_gust,data=flights,family=binomial(link="logit"))
+summary(DNF_1)
+
+ggplot(flights, aes(x=wind_gust, y=detection))+
+  geom_count()
+```
+* even most-correlated variable wind_gust has insignificant effect on detection (p=0.441)
+
+## Diagnostics
+```{r}
+DNF_simulationOutput <- simulateResiduals(fittedModel = DNF_1, n = 250)
+plotSimulatedResiduals(simulationOutput = DNF_simulationOutput)
+plotResiduals(flights$wind_spd, DNF_simulationOutput$scaledResiduals) #wonky residuals
+#not sure what the differences between the two above lines are
+
+testUniformity(simulationOutput = DNF_simulationOutput)
+#testU gives QQ plot, looks normal
+
+#effect plot
+plot(allEffects(DNF_1), partial.residuals=TRUE)
+```
+
+# Swell analysis
+```{r}
+ggplot(flights, aes(x=log(swell)))+
+  geom_histogram(binwidth=0.25)
+```
+
+## GLMs to test effects of wind speed, gust, and direction on swell height
+```{r}
+swell_mod <- glm(swell~wind_spd*wind_gust*wind_dir, data=flights, family=gaussian(link="log"), na.action="na.fail")
+dredge(swell_mod)
+```
+* ~wind gust is best, but only somewhat better than null model and ~wind_speed
+
+```{r}
+swell_1 <- glm(swell~wind_gust, data=flights, family=gaussian(link="log"))
+summary(swell_1)
+```
+* 1 kt increase in wind gust speed increases log wave height by 0.028; not a significant effect
+
+```{r}
+#diagnostics
+swell_simulationOutput <- simulateResiduals(fittedModel = swell_1, n = 250)
+plotSimulatedResiduals(simulationOutput = swell_simulationOutput)
+
+plot(allEffects(swell_1), partial.residuals=TRUE)
+```
+
+# Water Temperature Analysis
+
+```{r}
+ggplot(flights, aes(x=water_temp))+
+  geom_histogram(binwidth=1)
+```
+
+
+# GLMs to test effects of air temp, wind speed, gust and direction on water temp
+```{r}
+wt_mod <- glm(water_temp~air_temp*wind_spd*wind_gust*wind_dir, data=flights, family=gaussian(link="identity"), na.action="na.fail")
+View(dredge(wt_mod))
+```
+* best two models (equal AIC) are 
+  + 1) ~air_temp*wind_dir*wind_spd+wind_gust*wind_spd+wind_gust*wind_dir
+  + 2) ~air_temp*wind_dir*wind_spd+wind_gust*wind_spd*wind_dir
+
+```{r}
+wt_1 <- glm(water_temp~air_temp*wind_dir*wind_spd+wind_gust*wind_spd*wind_dir, data=flights, family=gaussian(link="identity"))
+summary(wt_1)
+```
+* way too many coefficients, re-doing dredge with max terms = 4
+
+```{r}
+dredge(wt_mod, m.max=4)
+```
+* ~air_temp is best model
+
+```{r}
+wt_2 <- glm(water_temp~air_temp, data=flights, family=gaussian(link="identity"))
+summary(wt_2)
+```
+* 1 degree increase in air temp increases water temp by 0.27 degrees, marginally significant effect (p<0.1)

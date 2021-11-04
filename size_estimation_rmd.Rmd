@@ -1,0 +1,120 @@
+---
+title: "Estimation of Shark Size"
+author: "John Parsons"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+#Setup
+```{r}
+knitr::opts_knit$set("C:/Users/John/Desktop/Research/SharkEye/Flight-Analysis_Scripts")
+```
+
+```{r}
+library(tidyverse) #dplyr
+select <- dplyr::select
+library(data.table)
+citation()
+```
+
+#Data import
+```{r}
+airdata <- read.csv("data_raw/transect_csvs/2021-04-22_10-28-46_v2.csv")
+#EDIT HERE with filepath
+#View(airdata)
+```
+
+```{r}
+start_times <- airdata %>% 
+  select(isTakingVideo, time.millisecond., datetime.local., altitude.m.) %>%
+  mutate(video = rleid(isTakingVideo)) %>% 
+  filter(isTakingVideo == 1) %>% 
+  mutate(video = video/2) %>% 
+  dplyr::group_by(video) %>% 
+  dplyr::summarize(start_time = first(time.millisecond.),
+                   datetime.local = first(datetime.local.))
+
+View(start_times)
+
+first(airdata$datetime.local.)
+
+end_times <- airdata %>% 
+  select(time.millisecond., datetime.local.) %>%
+  summarize(duration = last(time.millisecond.), end_time = last(datetime.local.))
+
+#View(end_times)
+```
+
+```{r}
+start_time <- start_times %>% filter(video == 1) %>% pull(start_time)
+#enter video number here (video == )
+#outer transect's video will be video 2
+start_time
+```
+
+```{r}
+still_time <- ((4*60)+42.43)*1000
+#enter time of still in video, in seconds, inside the ()
+#will have to add time of previous videos for haphazard flights (usually 334380 ms for a "full" video)
+still_time
+
+airdata_time <- (start_time + still_time)
+#this gives the time in the Airdata that the frame was captured
+```
+
+Pull altitude and coordinates from Airdata:
+```{r}
+still_location <- airdata %>% 
+  filter(time.millisecond. > airdata_time - 100) %>% 
+  filter(time.millisecond. < airdata_time + 100) %>%
+  summarize(altitude = mean(altitude.m.), latitude = mean(latitude), longitude = mean(longitude))
+View(still_location)
+```
+
+alternate method using (frame number/fps), for converting model output:
+```{r}
+#still_time <- (/30)*1000
+```
+
+Alternative manual method for broken airdata:
+```{r}
+airdata_time <- 865570 + 12093 - 557299 - 84269	
+
+airdata %>% 
+  filter(isTakingVideo == 1) %>% 
+  summarize(alt = mean(altitude.m.))
+```
+
+
+
+Write location data to new csv (not really necessary if location data is entered into 2020 Flight Data)
+```{r}
+#EDIT FILEPATH
+write.csv(still_location, "data/2020-07-21_16-42-24_v2_location_2.csv", row.names = FALSE)
+```
+
+```{r}
+#calculate size
+FOV <- 1.274090354 #angle of FOV, in radians, calculated from field testing (73 degrees)
+aspect <- 16/9 #aspect ratio of video frames
+frame_height <- (2*still_location$altitude*tan(FOV/2))/sqrt(1+aspect^2)
+frame_width <- frame_height*aspect #width and height in meters
+pixel_size <- (frame_width/2688) #size of each pixel in m
+
+#AI Method:
+bbox_y <- (maxY - minY) #pixel height of AI-generated bbox
+bbox_x <- (maxX - minX) #pixel width of AI-generated bbox
+
+#Manual Method:
+bbox_y <- 59 #ENTER height of bbox here
+bbox_x <- 120 #ENTER width of bbox here
+  
+shark_length_m <- sqrt((bbox_y^2) + (bbox_x^2)) * pixel_size
+shark_length_m
+shark_length_ft <- 3.28084 * shark_length
+shark_length_ft
+```
+
+
+
+
