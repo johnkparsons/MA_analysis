@@ -7,8 +7,8 @@ output: html_document
 
 #Setup
 ```{r, eval=FALSE}
-#install.packages("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "plyr", "broom.mixed", "ggthemes", "padr", "hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot")
-#install.packages("webshot")
+#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot"))
+#install.packages("cowplot")
 library(tidyverse)
 #library(plyr); library(dplyr)
 library(lme4) #modelling
@@ -35,6 +35,7 @@ library(bbmle) #AIC tables
 library(emmeans)#effects testing
 library(gt)#nice tables
 library(webshot) #saving gt tables
+library(cowplot)
 #webshot::install_phantomjs() 
 #citation("ptest")
 ```
@@ -115,7 +116,7 @@ size_dat_2019 <- read.csv("data_raw/size_dat_2019.csv")
 #View(size_dat_2019)
 size_dat_2019 <- size_dat_2019 %>% 
   select(1:10) %>% 
-  slice(-(48:49))
+  dplyr::slice(-(48:49))
 size_dat_2019$date <- as.Date(size_dat_2019$date, "%m/%d/%Y")
 size_dat_2019$length <- as.numeric(size_dat_2019$length)
 size_dat_2019 <- size_dat_2019 %>% 
@@ -126,8 +127,9 @@ size_dat_2019 <- size_dat_2019 %>%
 size_dat_2019 %>% 
   filter(size_class == "Adult") %>% 
   nrow()
-#no adults!!
 ```
+no adults!!
+
 
 ## 2020 Data Tidying
 
@@ -206,7 +208,7 @@ dat_2020_full <- flights_plus_channel_dat_2020 %>%
 ```{r}
 size_dat_2020 <- read.csv("data_raw/size_dat_2020.csv")
 #View(size_dat_2020)
-size_dat_2020 <- size_dat_2020 %>% slice(4:nrow(size_dat_2020))
+size_dat_2020 <- size_dat_2020 %>% dplyr::slice(4:nrow(size_dat_2020))
 size_dat_2020$date <- as.Date(size_dat_2020$date, "%m/%d/%Y")
 size_dat_2020$length <- as.numeric(size_dat_2020$length)
 size_dat_2020 <- size_dat_2020 %>% 
@@ -221,8 +223,9 @@ size_dat_2020 %>%
 size_dat_2020 %>% 
   filter(size_class == "Juvenile") %>% 
   nrow()
-#roughly 10x more juveniles than adults
 ```
+roughly 10x more juveniles than adults
+
 
 ## 2021 Data Tidying
 
@@ -304,7 +307,7 @@ dat_2021_full <- flights_plus_channel_dat_2021 %>%
 ```{r}
 size_dat_2021 <- read.csv("data_raw/size_dat_2021.csv")
 #View(size_dat_2021)
-size_dat_2021 <- size_dat_2021 %>% slice(3:nrow(size_dat_2021))
+size_dat_2021 <- size_dat_2021 %>% dplyr::slice(3:nrow(size_dat_2021))
 size_dat_2021$date <- as.Date(size_dat_2021$date, "%m/%d/%Y")
 size_dat_2021$length <- as.numeric(size_dat_2021$length)
 size_dat_2021 <- size_dat_2021 %>% 
@@ -319,12 +322,40 @@ size_dat_2021 %>%
 size_dat_2021 %>% 
   filter(size_class == "Juvenile") %>% 
   nrow()
-#MUCH higher % of adults than 2020 - 3:4 ratio
 ```
+MUCH higher % of adults than 2020 - 3:4 ratio
+
 
 ## Three-Year ("3yr") dataset tidying
 
-### Building 3yr daily dataset
+### Building 3yr daily dataset WITHOUT BUOY DATA - JUST DOING THIS FOR LAB MEETING 12/7/2021
+```{r}
+str(dat_2019)
+dat_2019$transect_datetime <- as_datetime(dat_2019$transect_datetime)
+dat_2020$datetime <- as_datetime(dat_2020$datetime)
+
+daily_2yr_dat <- full_join(dat_2019, dat_2020)
+#View(daily_2yr_dat)
+
+daily_2yr_dat$manual_small <- as.numeric(daily_2yr_dat$manual_small)
+dat_2021$manual_small <- as.numeric(dat_2021$manual_small)
+daily_2yr_dat$manual_large <- as.numeric(daily_2yr_dat$manual_large)
+dat_2021$manual_large <- as.numeric(dat_2021$manual_large)
+daily_2yr_dat$manual_unique <- as.numeric(daily_2yr_dat$manual_unique)
+dat_2021$manual_unique <- as.numeric(dat_2021$manual_unique)
+daily_2yr_dat$manual_total <- as.numeric(daily_2yr_dat$manual_total)
+dat_2021$manual_total <- as.numeric(dat_2021$manual_total)
+daily_2yr_dat$water_temp_channel <- as.numeric(daily_2yr_dat$water_temp_channel)
+dat_2021$water_temp_channel <- as.numeric(dat_2021$water_temp_channel)
+
+daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
+#View(daily_3yr_dat)
+
+write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
+daily_3yr_dat <- read.csv("daily_3yr_dat.csv")
+```
+
+### Building 3yr daily dataset WITH BUOY DATA - SEE PREVIOUS CHUNK
 ```{r}
 str(dat_2019_full)
 dat_2019_full$transect_datetime <- as_datetime(dat_2019_full$transect_datetime)
@@ -362,7 +393,6 @@ write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 
 ### Building 3yr size dataset
 ```{r}
-#View(size_dat_2019)
 size_dat_2019$video <- as.character(size_dat_2019$video)
 size_dat_2019$order <- as.character(size_dat_2019$order)
 size_dat_2019 <- size_dat_2019 %>% 
@@ -398,8 +428,11 @@ size_dat_unique <- size_dat_3yr %>%
                     mutate(year = year(date))
 
 nrow(size_dat_unique)
-# 833 sightings (as of 10/25/21)
+```
+838 sightings (as of 11/08/21)
 
+```{r}
+size_dat_unique$date <- as_date(size_dat_unique$date)
 joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
 #View(joined_3yr)
 ```
@@ -1038,7 +1071,14 @@ size_dat_2021 %>%
   filter(unique == "Y") %>%
   ggplot(aes(x = date, y = length_m)) + 
     geom_point() +
-    geom_smooth()
+    geom_smooth(method = "lm", se = F) +
+    theme_clean() +
+    scale_x_date(date_labels = "%B", breaks = "1 month") +
+    labs(x = "Date", y = "Length (m)")
+ggsave("plots/2021_size_regression.png", width = 5, height = 5)
+
+size_lm_2021 <- lm(length_m ~ date, data = size_dat_2021)
+summary(size_lm_2021)
 ```
 
 ### Comparing size across years
@@ -1059,9 +1099,12 @@ size_dat_unique %>%
 #years overlaid:
 size_dat_unique %>% 
   #filter(month(date) == c(7:9)) %>% 
-  ggplot(aes(x = yday(date), y = length)) +
+  ggplot(aes(x = as_date(yday(date)), y = length)) +
     geom_point(aes(color = as.factor(year)), alpha = 0.8) +
-    geom_smooth()
+    geom_smooth() +
+    theme_clean() +
+    scale_x_date(date_labels = "%B", breaks = "1 month") +
+    labs(x = "Date", y = "Length (m)")
     #geom_hline(yintercept = 3)
 ggsave("plots/size_3yrs.png")
 
@@ -1077,10 +1120,12 @@ ggsave("plots/size_violin_july-sept.png")
 size_dat_unique %>% 
   #filter(month(date) == c(7:9)) %>% 
   ggplot(aes(x = as.factor(year), y = length)) +
-    geom_boxplot() #+
-    #geom_hline(yintercept = 3)
-ggsave("plots/size_3yrs_box.png")
+    geom_boxplot() +
+    theme_clean() +
+    labs(x = "Date", y = "Length (m)")
+ggsave("plots/size_3yrs_box.png", width = 4, height = 5)
 
+#size summary table in FEET
 size_dat_unique %>% 
   group_by(year) %>% 
   summarize(min = min(length_ft, na.rm = TRUE),
@@ -1091,7 +1136,28 @@ size_dat_unique %>%
             "Juveniles per Adult" = sum(size_class == "Juvenile", na.rm = TRUE)/
                                     sum(size_class == "Adult", na.rm = TRUE))
 
+#size summary table in METERS, adults per juvenile
 yearly_size_summary <- size_dat_unique %>% 
+  group_by(year) %>% 
+  summarize("Mean TL" = mean(length, na.rm = TRUE),
+            min = min(length, na.rm = TRUE),
+            max = max(length, na.rm = TRUE),
+            "Juveniles" = sum(size_class == "Juvenile", na.rm = TRUE),
+            "Adults" = sum(size_class == "Adult", na.rm = TRUE),
+            "Adults per Juvenile" = 
+              sum(size_class == "Adult", na.rm = TRUE)/
+              sum(size_class == "Juvenile", na.rm = TRUE)) %>% 
+
+  gt() %>%
+    fmt_number(2:4, decimals = 1) %>% 
+    fmt_number(7, decimals = 2) %>% 
+    fmt_number(5:6, decimals = 0) %>% 
+    cols_merge_range(3,4) %>% 
+    cols_label("year" = "Year", "min" = "Range")
+gtsave(yearly_size_summary, "plots/yearly_size_summary_table.png")
+
+#size summary table in METERS, juveniles per adult
+size_dat_unique %>% 
   group_by(year) %>% 
   summarize("Mean TL" = mean(length, na.rm = TRUE),
             min = min(length, na.rm = TRUE),
@@ -1103,11 +1169,10 @@ yearly_size_summary <- size_dat_unique %>%
               sum(size_class == "Adult", na.rm = TRUE)) %>% 
 
   gt() %>% 
-    fmt_number(2:7, decimals = 1) %>% 
+    fmt_number(7, decimals = 1) %>% 
     fmt_number(5:6, decimals = 0) %>% 
     cols_merge_range(3,4) %>% 
     cols_label("year" = "Year", "min" = "Range")
-gtsave(yearly_size_summary, "plots/yearly_size_summary_table.png")
 ```
 
 ## Haphazard vs Transect Visualizations
@@ -1331,7 +1396,8 @@ size_dat_3yr %>%
     geom_hex(bins = 15) +
     scale_fill_distiller(palette = "YlOrRd", direction = 1) +
     theme_classic() +
-    theme(panel.background = element_rect(fill = "darkblue"))
+    geom_point(aes(x = -119.56, y = 34.405))
+ggsave("plots/heatmap_3yrs.png", width = 10)
 ```
 
 ### All Sharks, 2020
