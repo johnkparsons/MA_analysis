@@ -30,6 +30,8 @@ library(car)
 library(lubridate) #dates
 library(slider)
 library(hms)
+year <- lubridate::year
+week <- lubridate::week
 library(olsrr)
 library(bbmle) #AIC tables
 library(emmeans)#effects testing
@@ -385,8 +387,18 @@ dat_2021_full$manual_total <- as.numeric(dat_2021_full$manual_total)
 
 daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021_full)
 #View(daily_3yr_dat)
+```
 
-#daily_3yr_dat <- select(daily_3yr_dat, -c(7:8,23:25, 86:87))
+## Tidying 3-year data
+```{r}
+#str(daily_3yr_dat)
+#View(daily_3yr_dat)
+
+#daily_3yr_dat <- daily_3yr_dat %>% 
+  select(-c(1, 31, 39:42, 48, 76))
+
+daily_3yr_dat <- daily_3yr_dat %>% mutate(date = as.Date(date, origin = "1970-01-01"))
+daily_3yr_dat <- daily_3yr_dat %>% mutate(date = if_else(year(date) < 2000, date + years(2000), date))
 
 write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 ```
@@ -479,14 +491,6 @@ daily_3yr_dat <- daily_3yr_dat %>%
   rename(wharf_temp = temperature)
 ```
 
-## Tidying 3-year data
-```{r}
-str(daily_3yr_dat)
-View(daily_3yr_dat)
-
-daily_3yr_dat <- daily_3yr_dat %>% 
-  select(-c(1, 31, 39:42, 48, 76))
-```
 
 ## Dataframe without 2019
 ```{r}
@@ -501,22 +505,51 @@ dat_no_19 <- daily_3yr_dat %>%
 
 ## 3yr abundance visualizations
 ```{r}
-daily_3yr_dat <- full_join(dat_2019, dat_2020)
-#this isn't the "real" 3 yr dataset I'll use - see above
 yearly_abund_summary <- daily_3yr_dat %>% 
-  group_by(year) %>% 
-  summarize(mean = mean(total_unique, na.rm = TRUE),
-            max = max(total_unique, na.rm = TRUE))
-yearly_abund_summary
+  group_by(year(date)) %>% 
+  summarize("Total sightings" = sum(total_unique, na.rm = TRUE),
+            "Mean abundance" = mean(total_unique, na.rm = TRUE),
+            "Maximum abundance" = max(total_unique, na.rm = TRUE),
+            "Survey days" = n(),
+            "Sightings per day" = sum(total_unique, na.rm = TRUE)/n()) %>% 
+  gt() %>% 
+    fmt_number(columns = c(3,6), decimals = 2) %>% 
+    cols_label("year(date)" = "Year") %>% 
+    cols_width("Total sightings" ~ px(80),
+               "Mean abundance" ~ px(80),
+               "Maximum abundance" ~ px(80),
+               "Sightings per day" ~ px(80)) %>% 
+    cols_align(align = "center")
+gtsave(yearly_abund_summary, "plots/yearly_abund_summary.png")
 
+#years overlaid (not very informative):
 daily_3yr_dat %>% 
-  group_by(year) %>% 
-  summarize(mean = mean(total_unique, na.rm = TRUE),
-            max = max(total_unique, na.rm = TRUE)) %>% 
-  ggplot(aes(x = year, y = mean)) +
+  group_by(year(date), week(date)) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
+  rename(week = "week(date)", year = "year(date)") %>% 
+  ungroup() %>% 
+  ggplot(aes(x = as_factor(week), y = mean, fill = as_factor(year))) +
+    geom_bar(stat = "identity")
+
+#years faceted (decent option, potentially as a second graph after years averaged?):
+daily_3yr_dat %>% 
+  group_by(year(date), week(date)) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
+  rename(week = "week(date)", year = "year(date)") %>% 
+  ungroup() %>% 
+  ggplot(aes(x = as_factor(week), y = mean)) +
     geom_bar(stat = "identity") +
-    geom_point(aes(y = max))
-  
+    facet_grid(.~as_factor(year))
+
+#years averaged: NEED TO FIX X-AXIS
+daily_3yr_dat %>% 
+  group_by(week(date)) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
+  rename(week = "week(date)") %>%
+  ungroup() %>% 
+  ggplot(aes(x = week, y = mean)) +
+    geom_bar(stat = "identity") +
+    scale_x_date(date_labels = "%B", breaks = "1 month")
 ```
 
 ## 3yr environmental variable visualizations
@@ -1104,9 +1137,10 @@ size_dat_unique %>%
     geom_smooth() +
     theme_clean() +
     scale_x_date(date_labels = "%B", breaks = "1 month") +
-    labs(x = "Date", y = "Length (m)")
+    labs(x = "Date", y = "Length (m)", color = "Year") +
+    scale_color_brewer(palette = "Set1")
     #geom_hline(yintercept = 3)
-ggsave("plots/size_3yrs.png")
+ggsave("plots/size_3yrs_scatter.png", height = 5, width = 9)
 
 #years separated, violin plot, July-September:
 size_dat_unique %>% 
@@ -1119,10 +1153,11 @@ ggsave("plots/size_violin_july-sept.png")
 #years separated, box plot:
 size_dat_unique %>% 
   #filter(month(date) == c(7:9)) %>% 
-  ggplot(aes(x = as.factor(year), y = length)) +
-    geom_boxplot() +
+  ggplot(aes(x = as.factor(year(date)), y = length, color = as.factor(year(date)))) +
+    geom_boxplot(show.legend = FALSE) +
     theme_clean() +
-    labs(x = "Date", y = "Length (m)")
+    labs(x = "Date", y = "Length (m)") +
+    scale_color_brewer(palette = "Set1")
 ggsave("plots/size_3yrs_box.png", width = 4, height = 5)
 
 #size summary table in FEET
@@ -1153,7 +1188,9 @@ yearly_size_summary <- size_dat_unique %>%
     fmt_number(7, decimals = 2) %>% 
     fmt_number(5:6, decimals = 0) %>% 
     cols_merge_range(3,4) %>% 
-    cols_label("year" = "Year", "min" = "Range")
+    cols_label("year" = "Year", "min" = "Range") %>% 
+    cols_width("Adults per Juvenile" ~ px(100)) %>% 
+    cols_align(align = "center")
 gtsave(yearly_size_summary, "plots/yearly_size_summary_table.png")
 
 #size summary table in METERS, juveniles per adult
