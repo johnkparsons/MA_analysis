@@ -427,13 +427,13 @@ size_dat_3yr <- size_dat_3yr %>%
                          length = length_m,
                          tagged = tagged.)
 
-write.csv(size_dat_3yr, "size_dat_3yr.csv")
+write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
 ```
 
 ### New 3yr df with size of each unique shark
 (1 row = 1 shark, daily data is repeated for days where multiple sharks were observed)
 ```{r}
-size_dat_3yr <- read.csv("size_dat_3yr.csv")
+size_dat_3yr <- read.csv("data/size_dat_3yr.csv")
 
 size_dat_unique <- size_dat_3yr %>%
                     filter(unique == "Y") %>% 
@@ -484,7 +484,7 @@ wharf_dat <- wharf_dat %>%
               group_by(date_hour) %>% 
               summarize_at(vars(1:4), mean, na.rm = TRUE)
 
-daily_3yr_dat <- read.csv("daily_3yr_dat.csv")
+daily_3yr_dat <- read.csv("data/daily_3yr_dat.csv")
 daily_3yr_dat$date_hour <- as_datetime(daily_3yr_dat$date_hour)
 daily_3yr_dat <- left_join(daily_3yr_dat, wharf_dat, by = "date_hour")
 daily_3yr_dat <- daily_3yr_dat %>% 
@@ -504,6 +504,8 @@ dat_no_19 <- daily_3yr_dat %>%
 * Older individual year visualizations are below 3yr visualizations
 
 ## 3yr abundance visualizations
+
+Summary table
 ```{r}
 yearly_abund_summary <- daily_3yr_dat %>% 
   group_by(year(date)) %>% 
@@ -521,35 +523,103 @@ yearly_abund_summary <- daily_3yr_dat %>%
                "Sightings per day" ~ px(80)) %>% 
     cols_align(align = "center")
 gtsave(yearly_abund_summary, "plots/yearly_abund_summary.png")
+```
 
-#years overlaid (not very informative):
+Years stacked:
+```{r}
 daily_3yr_dat %>% 
   group_by(year(date), week(date)) %>% 
   summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
   rename(week = "week(date)", year = "year(date)") %>% 
   ungroup() %>% 
-  ggplot(aes(x = as_factor(week), y = mean, fill = as_factor(year))) +
-    geom_bar(stat = "identity")
+  ggplot(aes(x = as.Date(paste(week, 1, sep="-"), "%U-%u"), y = mean, fill = as_factor(year))) +
+    geom_bar(stat = "identity", position = "stack") +
+    scale_fill_brewer("Year", palette = "Set1") +
+    theme_clean() +
+    expand_limits(y = 0) +
+    scale_x_date("Date", date_labels = "%B", breaks = "1 month") +
+    scale_y_continuous("Abundance", expand = c(0,0))
+ggsave("plots/3yr_abund_stacked.png", width = 8, height = 5)
+```
 
-#years faceted (decent option, potentially as a second graph after years averaged?):
+Years faceted (decent option, potentially as a second graph after years averaged?):
+```{r}
 daily_3yr_dat %>% 
   group_by(year(date), week(date)) %>% 
   summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
   rename(week = "week(date)", year = "year(date)") %>% 
   ungroup() %>% 
-  ggplot(aes(x = as_factor(week), y = mean)) +
+  ggplot(aes(x = as.Date(paste(week, 1, sep="-"), "%U-%u"), y = mean, fill = as_factor(year))) +
     geom_bar(stat = "identity") +
-    facet_grid(.~as_factor(year))
+    facet_grid(as_factor(year)~.) +
+    scale_fill_brewer("Year", palette = "Set1") +
+    theme_clean() +
+    theme(strip.background = element_blank(),
+          strip.text.y = element_blank(),
+          panel.spacing.y = unit(1, "lines")) +
+    expand_limits(y = 0) +
+    scale_x_date("Date", date_labels = "%B", breaks = "1 month") +
+    scale_y_continuous("Abundance", expand = c(0,0))
+ggsave("plots/3yr_abund_facet_stack.png", width = 8, height = 5)
+```
 
-#years averaged: NEED TO FIX X-AXIS
+Years averaged:
+```{r}
 daily_3yr_dat %>% 
   group_by(week(date)) %>% 
   summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
   rename(week = "week(date)") %>%
   ungroup() %>% 
-  ggplot(aes(x = week, y = mean)) +
+  ggplot(aes(x = as.Date(paste(week, 1, sep="-"), "%U-%u"), y = mean)) +
     geom_bar(stat = "identity") +
-    scale_x_date(date_labels = "%B", breaks = "1 month")
+    scale_x_date(date_labels = "%B", breaks = "1 month") +
+    labs(x = "Date", y = "Abundance") +
+    theme_clean()
+```
+
+Rolling abundance:
+WHAT LENGTH WINDOW DO I WANT?
+```{r}
+daily_3yr_dat %>%
+  group_by(yday(date)) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
+  rename(day = "yday(date)") %>%
+  ungroup() %>%
+  filter(!is.na(mean)) %>% 
+  ggplot(aes(x = as_date(day), y = rollmean(mean, 10, na.pad = TRUE, align = "right"))) +
+    geom_line(size = 1) +
+    theme_clean() +
+    expand_limits(y = 0) +
+    scale_y_continuous("Abundance", expand = c(0, 0)) +
+    scale_x_date("Date", date_labels = "%B", breaks = "1 month")
+ggsave("plots/3yr_rolling_abund.png", width = 9, height = 5)
+```
+
+Rolling abundance, only including days within survey window for all three years:
+```{r}
+#find latest start and earliest stop dates:
+daily_3yr_dat %>% 
+  group_by(year(date)) %>% 
+  summarize(min_day = min(yday(date)),
+            max_day = max(yday(date)))
+#2019 is latest start date (day 150) and 2021 is earliest stop date (day 312)
+
+daily_3yr_dat %>%
+  filter(yday(date) > 149 & yday(date) < 313) %>% 
+  group_by(yday(date)) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE)) %>%
+  rename(day = "yday(date)") %>%
+  ungroup() %>%
+  filter(!is.na(mean)) %>% 
+  ggplot(aes(x = as_date(day), y = rollmean(mean, 7, na.pad = TRUE, align = "right"))) +
+    geom_line(size = 1) +
+    theme_clean() +
+    expand_limits(y = 0) +
+    scale_y_continuous("Abundance", expand = c(0, 0), limits = c(0,6)) +
+    scale_x_date("Date", date_labels = "%B", breaks = "1 month",
+                 limits = c(as_date(155), as_date(315)))
+    
+ggsave("plots/3yr_rolling_abund_bounded.png", width = 9, height = 3)
 ```
 
 ## 3yr environmental variable visualizations
@@ -1098,8 +1168,9 @@ size_dat_2020 %>%
   filter(unique == "Y") %>%
   ggplot(aes(x = date, y = length_m)) + 
     geom_point() + 
-    geom_smooth()
+    geom_smooth
 
+#2021:
 size_dat_2021 %>% 
   filter(unique == "Y") %>%
   ggplot(aes(x = date, y = length_m)) + 
@@ -1112,6 +1183,22 @@ ggsave("plots/2021_size_regression.png", width = 5, height = 5)
 
 size_lm_2021 <- lm(length_m ~ date, data = size_dat_2021)
 summary(size_lm_2021)
+
+#2021, quadratic:
+size_dat_2021 <- mutate(size_dat_2021, date2 = (as.numeric(date))^2)
+
+size_dat_2021 %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = date, y = length_m)) + 
+    geom_point() +
+    geom_smooth(method = "lm", formula = y ~ x + I(x^2), se = F) +
+    theme_clean() +
+    scale_x_date(date_labels = "%B", breaks = "1 month") +
+    labs(x = "Date", y = "Length (m)")
+ggsave("plots/2021_size_regression_quad.png", width = 5, height = 5)
+
+size_lm_2021_quad <- lm(length_m ~ date + date2, data = size_dat_2021)
+summary(size_lm_2021_quad)
 ```
 
 ### Comparing size across years
