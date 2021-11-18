@@ -1,0 +1,51 @@
+---
+title: "csulb_calibration_test_nov_14"
+author: "John Parsons"
+date: "11/17/2021"
+output: html_document
+---
+
+```{r}
+knitr::opts_knit$set("C:/Users/Dell/Desktop/MA_analysis")
+```
+
+# Submerged test (1.5 m depth)
+```{r}
+BOI_1_sub_dat <- read.csv("data_raw/csulb_tests_nov_14/BOI_1_submerged_JP_calculations.csv")
+View(BOI_1_sub_dat)
+
+BOI_1_sub_dat$test_alt <- as.factor(as.character(BOI_1_sub_dat$test_alt))
+
+BOI_1_sub_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.97, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/submerged.png")
+```
+
+# Surface test, BOI 1 drone
+```{r}
+BOI_1_surface_dat <- read.csv("data_raw/csulb_tests_nov_14/BOI_1_surface_JP_calculations.csv")
+View(BOI_1_surface_dat)
+
+BOI_1_surface_dat$test_alt <- as.factor(as.character(BOI_1_surface_dat$test_alt))
+
+BOI_1_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_1_surface_pvc.png")
+
+BOI_1_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_board, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_1_surface_board.png")
+
+```
+
+
+
+
+
+
