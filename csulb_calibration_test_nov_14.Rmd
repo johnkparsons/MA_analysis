@@ -7,6 +7,7 @@ output: html_document
 
 ```{r}
 knitr::opts_knit$set("C:/Users/Dell/Desktop/MA_analysis")
+library(gt)
 ```
 
 # Submerged test (1.5 m depth)
@@ -20,7 +21,27 @@ BOI_1_sub_dat %>%
   ggplot(aes(x = test_alt, y = size_pvc, fill = method)) +
     geom_boxplot() +
     geom_hline(yintercept = 1.97, linetype = 2, color = "red")
-ggsave("plots/calibration_tests/submerged.png")
+ggsave("plots/calibration_tests/submerged.png", width = 10)
+
+BOI_1_sub_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.97, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/submerged_asl.png", width = 10)
+
+BOI_1_sub_dat %>%
+  ggplot(aes(x = test_alt, y = size_asl_plus_depth, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.97, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/submerged_asl_plus_depth.png", width = 10)
+
+BOI_1_sub_dat %>%
+  pivot_longer(cols = c(5:7), names_to = "height_type", values_to = "length") %>%
+  filter(method == "video") %>% 
+  ggplot(aes(x = test_alt, y = length, fill = height_type)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.97, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/height_comp_submerged.png", width = 10)
 ```
 
 # Surface test, BOI 1 drone
@@ -34,18 +55,42 @@ BOI_1_surface_dat %>%
   ggplot(aes(x = test_alt, y = size_pvc, fill = method)) +
     geom_boxplot() +
     geom_hline(yintercept = 1.98, linetype = 2, color = "red")
-ggsave("plots/calibration_tests/BOI_1_surface_pvc.png")
+ggsave("plots/calibration_tests/BOI_1_surface_pvc.png", width = 10)
 
 BOI_1_surface_dat %>%
   ggplot(aes(x = test_alt, y = size_board, fill = method)) +
     geom_boxplot() +
     geom_hline(yintercept = 2.93, linetype = 2, color = "red")
-ggsave("plots/calibration_tests/BOI_1_surface_board.png")
+ggsave("plots/calibration_tests/BOI_1_surface_board.png", width = 10)
 
+BOI_1_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_1_surface_pvc_asl.png", width = 10)
+
+BOI_1_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_board_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_1_surface_board_asl.png", width = 10)
+
+BOI_1_surface_dat %>%
+  pivot_longer(cols = c(5:8), names_to = "height_type", values_to = "length") %>%
+  filter(method == "video") %>% 
+  ggplot(aes(x = test_alt, y = length, fill = height_type)) +
+    geom_boxplot() +
+    geom_hline(yintercept = c(1.97, 2.93), linetype = 2, color = "red")
+ggsave("plots/calibration_tests/height_comps_surface.png", width = 10)
 ```
 
-
-
-
+Determining adjustment factors
+```{r}
+BOI_1_surface_dat %>% 
+  group_by(method, test_alt) %>% 
+  summarize(mean_pvc = mean(size_pvc), mean_board = mean(size_board)) %>% 
+  mutate(error_pvc = (mean_pvc/1.98)-1, error_board = (mean_board/2.93)-1) %>% 
+  gt()
+```
 
 
