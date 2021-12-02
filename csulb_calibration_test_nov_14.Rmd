@@ -83,14 +83,157 @@ BOI_1_surface_dat %>%
     geom_hline(yintercept = c(1.97, 2.93), linetype = 2, color = "red")
 ggsave("plots/calibration_tests/height_comps_surface.png", width = 10)
 ```
+# Surface test, BOI 2 drone
+```{r}
+BOI_2_surface_dat <- read.csv("data_raw/csulb_tests_nov_14/BOI_2_surface_JP_calculations.csv")
+View(BOI_2_surface_dat)
 
-Determining adjustment factors
+BOI_2_surface_dat$test_alt <- as.factor(as.character(BOI_2_surface_dat$test_alt))
+
+BOI_2_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_2_surface_pvc.png", width = 10)
+
+BOI_2_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_board, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_2_surface_board.png", width = 10)
+
+BOI_2_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_2_surface_pvc_asl.png", width = 10)
+
+BOI_2_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_board_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_2_surface_board_asl.png", width = 10)
+```
+
+# Comparing BOI 1 to BOI 2
+```{r}
+BOI_1_vs_2_dat <- bind_rows(BOI_1_surface_dat, BOI_2_surface_dat, .id = "drone")
+View(BOI_1_vs_2_dat)
+
+BOI_1_vs_2_dat %>% 
+  filter(method == "video") %>%
+  ggplot(aes(x = test_alt, y = size_pvc_asl, fill = drone)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_1_vs_2_pvc_asl.png", width = 10)
+
+BOI_1_vs_2_dat %>% 
+  filter(method == "video") %>%
+  ggplot(aes(x = test_alt, y = size_board_asl, fill = drone)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/BOI_1_vs_2_board_asl.png", width = 10)
+
+BOI_1_vs_2_dat %>% 
+  filter(method == "photo") %>%
+  ggplot(aes(x = test_alt, y = size_board_asl, fill = drone)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+```
+
+# Surface test, Love Lab drone
+```{r}
+LL_surface_dat <- read.csv("data_raw/csulb_tests_nov_14/LL_surface_JP_calculations.csv")
+View(LL_surface_dat)
+
+LL_surface_dat$test_alt <- as.factor(as.character(LL_surface_dat$test_alt))
+
+LL_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/LL_surface_pvc.png", width = 10)
+
+LL_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_board, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/LL_surface_board.png", width = 10)
+
+LL_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_pvc_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/LL_surface_pvc_asl.png", width = 10)
+
+LL_surface_dat %>%
+  ggplot(aes(x = test_alt, y = size_board_asl, fill = method)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/LL_surface_board_asl.png", width = 10)
+```
+
+# Comparing Love Lab to BOI drones
+```{r}
+LL_vs_BOI_dat <- bind_rows(BOI_1_surface_dat, BOI_2_surface_dat, LL_surface_dat, .id = "drone")
+View(LL_vs_BOI_dat)
+
+LL_vs_BOI_dat %>% 
+  filter(method == "video") %>%
+  ggplot(aes(x = test_alt, y = size_pvc_asl, fill = drone)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/LL_vs_BOI_pvc_asl.png", width = 10)
+
+LL_vs_BOI_dat %>% 
+  filter(method == "video") %>%
+  ggplot(aes(x = test_alt, y = size_board_asl, fill = drone)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
+ggsave("plots/calibration_tests/LL_vs_BOI_board_asl.png", width = 10)
+```
+
+
+Determining adjustment factor for Love Lab drone
 ```{r}
 BOI_1_surface_dat %>% 
-  group_by(method, test_alt) %>% 
-  summarize(mean_pvc = mean(size_pvc), mean_board = mean(size_board)) %>% 
-  mutate(error_pvc = (mean_pvc/1.98)-1, error_board = (mean_board/2.93)-1) %>% 
+  filter(method == "video") %>% 
+  group_by(test_alt) %>% 
+  summarize(mean_pvc_asl = mean(size_pvc_asl), mean_board_asl = mean(size_board_asl)) %>% 
+  mutate(error_pvc = (mean_pvc_asl/1.98)-1, error_board = (mean_board_asl/2.93)-1) %>% 
   gt()
+
+BOI_2_surface_dat %>% 
+  filter(method == "video") %>% 
+  group_by(test_alt) %>% 
+  summarize(mean_pvc_asl = mean(size_pvc_asl), mean_board_asl = mean(size_board_asl)) %>% 
+  mutate(error_pvc = (mean_pvc_asl/1.98)-1, error_board = (mean_board_asl/2.93)-1) %>% 
+  gt()
+
+LL_surface_dat %>% 
+  filter(method == "video") %>% 
+  group_by(test_alt) %>% 
+  summarize(mean_pvc_asl = mean(size_pvc_asl), mean_board_asl = mean(size_board_asl)) %>% 
+  mutate(error_pvc = (mean_pvc_asl/1.98)-1, error_board = (mean_board_asl/2.93)-1) %>% 
+  gt()
+
+LL_surface_dat %>% 
+  filter(method == "video") %>% 
+  group_by(test_alt) %>% 
+  summarize(mean_pvc_asl = (mean(size_pvc_asl))*0.72, mean_board_asl = mean(size_board_asl)*0.72) %>% 
+  mutate(error_pvc = (mean_pvc_asl/1.98)-1, error_board = (mean_board_asl/2.93)-1) %>% 
+  gt()
+
+LL_surface_dat %>% 
+  filter(method == "video") %>% 
+  group_by(test_alt) %>% 
+  summarize(mean_pvc_asl = mean(size_pvc_asl), mean_board_asl = mean(size_board_asl),
+            mean_pvc_adj = mean(size_pvc_asl)*0.72, mean_board_adj = mean(size_board_asl)*0.72) %>% 
+  pivot_longer(2:5, names_to = "type", values_to = "size") %>% 
+  ggplot(aes(x = test_alt, y = size, color = type)) +
+    geom_point(size = 4) +
+    geom_hline(yintercept = 1.98, linetype = 2, color = "red") +
+    geom_hline(yintercept = 2.93, linetype = 2, color = "red")
 ```
 
 

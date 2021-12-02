@@ -592,7 +592,7 @@ daily_3yr_dat %>%
     expand_limits(y = 0) +
     scale_y_continuous("Abundance", expand = c(0, 0)) +
     scale_x_date("Date", date_labels = "%B", breaks = "1 month")
-ggsave("plots/3yr_rolling_abund.png", width = 9, height = 5)
+ggsave("plots/3yr_rolling_abund_10day.png", width = 9, height = 5)
 ```
 
 Rolling abundance, only including days within survey window for all three years:
@@ -619,7 +619,7 @@ daily_3yr_dat %>%
     scale_x_date("Date", date_labels = "%B", breaks = "1 month",
                  limits = c(as_date(155), as_date(315)))
     
-ggsave("plots/3yr_rolling_abund_bounded.png", width = 9, height = 3)
+ggsave("plots/3yr_rolling_abund_bounded_7day.png", width = 9, height = 3)
 ```
 
 ## 3yr environmental variable visualizations
