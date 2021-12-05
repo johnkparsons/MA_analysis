@@ -1203,13 +1203,19 @@ summary(size_lm_2021_quad)
 
 ### Comparing size across years
 ```{r}
-#faceted by year:
 size_dat_unique %>% 
-  ggplot(aes(x = yday(date), y = length)) +
-    geom_point() +
-    facet_grid(cols = vars(year(date)))
+  ggplot(aes(x = length, fill = as.factor(year(date)))) +
+    geom_histogram() +
+    facet_grid(rows = vars(year(date))) +
+    theme_clean() +
+    labs(y = "Count", x = "Length (m)", fill = "Year") +
+    theme(strip.text.y = element_blank()) +
+    scale_color_brewer(palette = "Set1")
+ggsave("plots/size_3yrs_histo.png", height = 5, width = 5)
+```
 
-#looking at one month only:
+looking at one month only:
+```{r}
 size_dat_unique %>% 
   filter(month(date) == 8) %>% 
   ggplot(aes(x = yday(date), y = length)) +
@@ -1225,6 +1231,19 @@ size_dat_unique %>%
     theme_clean() +
     scale_x_date(date_labels = "%B", breaks = "1 month") +
     labs(x = "Date", y = "Length (m)", color = "Year") +
+    scale_color_brewer(palette = "Set1")
+    #geom_hline(yintercept = 3)
+ggsave("plots/size_3yrs_scatter.png", height = 5, width = 9)
+
+#years overlaid, windowed:
+size_dat_unique %>% 
+  filter(yday(date) > 149 & yday(date) < 313) %>% 
+  ggplot(aes(x = as_date(yday(date)), y = length)) +
+    geom_point() +
+    #geom_smooth() +
+    theme_clean() +
+    scale_x_date(date_labels = "%B", breaks = "1 month") +
+    labs(x = "Date", y = "Length (m)") +
     scale_color_brewer(palette = "Set1")
     #geom_hline(yintercept = 3)
 ggsave("plots/size_3yrs_scatter.png", height = 5, width = 9)
@@ -1247,6 +1266,24 @@ size_dat_unique %>%
     scale_color_brewer(palette = "Set1")
 ggsave("plots/size_3yrs_box.png", width = 4, height = 5)
 
+year_size_mod <- aov(length ~ as.factor(year(date)), data = size_dat_unique)
+summary(year_size_mod)
+plot(year_size_mod)
+TukeyHSD(year_size_mod)
+```
+
+```{r}
+
+#years separated, overlap window, box plot:
+size_dat_unique %>% 
+  filter(yday(date) > 149 & yday(date) < 313) %>% 
+  ggplot(aes(x = as.factor(year(date)), y = length, color = as.factor(year(date)))) +
+    geom_boxplot(show.legend = FALSE) +
+    theme_clean() +
+    labs(x = "Date", y = "Length (m)") +
+    scale_color_brewer(palette = "Set1")
+ggsave("plots/size_3yrs_box_windowed.png", width = 4, height = 5)
+
 #size summary table in FEET
 size_dat_unique %>% 
   group_by(year) %>% 
@@ -1258,7 +1295,7 @@ size_dat_unique %>%
             "Juveniles per Adult" = sum(size_class == "Juvenile", na.rm = TRUE)/
                                     sum(size_class == "Adult", na.rm = TRUE))
 
-#size summary table in METERS, adults per juvenile
+#size summary table in METERS, percentage adults
 yearly_size_summary <- size_dat_unique %>% 
   group_by(year) %>% 
   summarize("Mean TL" = mean(length, na.rm = TRUE),
@@ -1266,18 +1303,19 @@ yearly_size_summary <- size_dat_unique %>%
             max = max(length, na.rm = TRUE),
             "Juveniles" = sum(size_class == "Juvenile", na.rm = TRUE),
             "Adults" = sum(size_class == "Adult", na.rm = TRUE),
-            "Adults per Juvenile" = 
+            "Percent Adults" = 
               sum(size_class == "Adult", na.rm = TRUE)/
-              sum(size_class == "Juvenile", na.rm = TRUE)) %>% 
-
+                (sum(size_class == "Juvenile", na.rm = TRUE) +
+                 sum(size_class == "Adult", na.rm = TRUE))) %>%
   gt() %>%
     fmt_number(2:4, decimals = 1) %>% 
     fmt_number(7, decimals = 2) %>% 
     fmt_number(5:6, decimals = 0) %>% 
     cols_merge_range(3,4) %>% 
     cols_label("year" = "Year", "min" = "Range") %>% 
-    cols_width("Adults per Juvenile" ~ px(100)) %>% 
+    cols_width("Percent Adults" ~ px(100)) %>% 
     cols_align(align = "center")
+yearly_size_summary
 gtsave(yearly_size_summary, "plots/yearly_size_summary_table.png")
 
 #size summary table in METERS, juveniles per adult
@@ -1291,7 +1329,6 @@ size_dat_unique %>%
             "Juveniles per Adult" = 
               sum(size_class == "Juvenile", na.rm = TRUE)/
               sum(size_class == "Adult", na.rm = TRUE)) %>% 
-
   gt() %>% 
     fmt_number(7, decimals = 1) %>% 
     fmt_number(5:6, decimals = 0) %>% 
@@ -1522,6 +1559,19 @@ size_dat_3yr %>%
     theme_classic() +
     geom_point(aes(x = -119.56, y = 34.405))
 ggsave("plots/heatmap_3yrs.png", width = 10)
+
+size_dat_3yr %>%
+  filter(video == "inner" | video == "outer") %>%
+  filter(unique == "Y") %>%
+  filter(!is.na(length)) %>%
+  dplyr::filter(lat > 0) %>% 
+  ggplot(aes(x = long, y = lat)) +
+    geom_hex(bins = 15) +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    theme_classic() +
+    geom_point(aes(x = -119.56, y = 34.405))
+
+View(size_dat_3yr)
 ```
 
 ### All Sharks, 2020
