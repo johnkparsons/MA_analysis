@@ -357,7 +357,7 @@ write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 daily_3yr_dat <- read.csv("daily_3yr_dat.csv")
 ```
 
-### Building 3yr daily dataset WITH BUOY DATA - SEE PREVIOUS CHUNK
+### Building 3yr daily dataset WITH BUOY DATA (will replace previous chunk)
 ```{r}
 str(dat_2019_full)
 dat_2019_full$transect_datetime <- as_datetime(dat_2019_full$transect_datetime)
@@ -441,7 +441,7 @@ size_dat_unique <- size_dat_3yr %>%
 
 nrow(size_dat_unique)
 ```
-838 sightings (as of 11/08/21)
+866 sightings (data as of 12/28/21)
 
 ```{r}
 size_dat_unique$date <- as_date(size_dat_unique$date)
@@ -510,22 +510,20 @@ Summary table
 yearly_abund_summary <- daily_3yr_dat %>% 
   group_by(year(date)) %>% 
   summarize("Total sightings" = sum(total_unique, na.rm = TRUE),
-            "Mean abundance" = mean(total_unique, na.rm = TRUE),
-            "Maximum abundance" = max(total_unique, na.rm = TRUE),
             "Survey days" = n(),
-            "Sightings per day" = sum(total_unique, na.rm = TRUE)/n()) %>% 
+            "Sightings per day" = sum(total_unique, na.rm = TRUE)/n(),
+            "Maximum abundance" = max(total_unique, na.rm = TRUE)) %>% 
   gt() %>% 
-    fmt_number(columns = c(3,6), decimals = 2) %>% 
+    fmt_number(columns = 4, decimals = 2) %>% 
     cols_label("year(date)" = "Year") %>% 
     cols_width("Total sightings" ~ px(80),
-               "Mean abundance" ~ px(80),
                "Maximum abundance" ~ px(80),
                "Sightings per day" ~ px(80)) %>% 
     cols_align(align = "center")
 gtsave(yearly_abund_summary, "plots/yearly_abund_summary.png")
 ```
 
-Years stacked:
+Years stacked (pretty ugly):
 ```{r}
 daily_3yr_dat %>% 
   group_by(year(date), week(date)) %>% 
@@ -542,7 +540,7 @@ daily_3yr_dat %>%
 ggsave("plots/3yr_abund_stacked.png", width = 8, height = 5)
 ```
 
-Years faceted (decent option, potentially as a second graph after years averaged?):
+Years faceted (good option, potentially as a second graph after years averaged?):
 ```{r}
 daily_3yr_dat %>% 
   group_by(year(date), week(date)) %>% 
@@ -556,11 +554,15 @@ daily_3yr_dat %>%
     theme_clean() +
     theme(strip.background = element_blank(),
           strip.text.y = element_blank(),
-          panel.spacing.y = unit(1, "lines")) +
+          panel.spacing.y = unit(1, "lines"),
+          panel.background = element_blank(),
+          plot.background = element_blank(),
+          legend.background = element_rect(fill = 'transparent'),
+          panel.border = element_blank()) +
     expand_limits(y = 0) +
     scale_x_date("Date", date_labels = "%B", breaks = "1 month") +
     scale_y_continuous("Abundance", expand = c(0,0))
-ggsave("plots/3yr_abund_facet_stack.png", width = 8, height = 5)
+ggsave("plots/3yr_abund_yrs_facet.png", width = 8, height = 5)
 ```
 
 Years averaged:
@@ -1202,6 +1204,8 @@ summary(size_lm_2021_quad)
 ```
 
 ### Comparing size across years
+
+Histogram faceted by year:
 ```{r}
 size_dat_unique %>% 
   ggplot(aes(x = length, fill = as.factor(year(date)))) +
@@ -1221,10 +1225,11 @@ size_dat_unique %>%
   ggplot(aes(x = yday(date), y = length)) +
     geom_point() +
     facet_grid(cols = vars(year(date)))
+```
 
-#years overlaid:
+Years overlaid:
+```{r}
 size_dat_unique %>% 
-  #filter(month(date) == c(7:9)) %>% 
   ggplot(aes(x = as_date(yday(date)), y = length)) +
     geom_point(aes(color = as.factor(year)), alpha = 0.8) +
     geom_smooth() +
@@ -1234,6 +1239,19 @@ size_dat_unique %>%
     scale_color_brewer(palette = "Set1")
     #geom_hline(yintercept = 3)
 ggsave("plots/size_3yrs_scatter.png", height = 5, width = 9)
+```
+
+years overlaid, separate regressions:
+```{r}
+size_dat_unique %>% 
+  ggplot(aes(x = as_date(yday(date)), y = length, color = as.factor(year))) +
+    geom_point(alpha = 0.2) +
+    geom_smooth(method= "lm", se = F) +
+    theme_clean() +
+    scale_x_date(date_labels = "%b", breaks = "1 month") +
+    labs(x = "Date", y = "Length (m)", color = "Year") +
+    scale_color_brewer(palette = "Set1")
+ggsave("plots/size_3yrs_scatter_regressions.png", height = 5, width = 5)
 
 #years overlaid, windowed:
 size_dat_unique %>% 
@@ -1258,10 +1276,14 @@ ggsave("plots/size_violin_july-sept.png")
 
 #years separated, box plot:
 size_dat_unique %>% 
-  #filter(month(date) == c(7:9)) %>% 
+  filter(length < 5) %>% 
   ggplot(aes(x = as.factor(year(date)), y = length, color = as.factor(year(date)))) +
     geom_boxplot(show.legend = FALSE) +
     theme_clean() +
+    theme(panel.background = element_blank(),
+          plot.background = element_blank(),
+          legend.background = element_rect(fill = 'transparent'),
+          panel.border = element_blank()) +
     labs(x = "Date", y = "Length (m)") +
     scale_color_brewer(palette = "Set1")
 ggsave("plots/size_3yrs_box.png", width = 4, height = 5)
@@ -1273,7 +1295,6 @@ TukeyHSD(year_size_mod)
 ```
 
 ```{r}
-
 #years separated, overlap window, box plot:
 size_dat_unique %>% 
   filter(yday(date) > 149 & yday(date) < 313) %>% 
