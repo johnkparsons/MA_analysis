@@ -82,7 +82,27 @@ dat_2019 <- dat_2019 %>%
                                           transect_large/transect_effort))
 ```
 
-### Reading in environmental data - 2019
+### Reading in tide data - 2019
+```{r}
+tide_dat_2019 <- read.csv("data_raw/2019_tide_dat.txt")
+View(tide_dat_2019)
+str(tide_dat_2019)
+
+tide_dat_2019 <- tide_dat_2019 %>% 
+  rename(time = 2) %>% 
+  mutate(time = as_datetime(time, format = "%H:%M")) %>%
+  mutate(time = substring(time, 12)) %>% 
+  mutate(date = as_datetime(Date)) %>% 
+  unite(date_hour, c(date, time), sep = " ") %>% 
+  select(-c(1,3,4)) %>%
+  rename(tide = 2)
+
+dat_2019$date_hour <- as.character(dat_2019$date_hour)
+tide_added_2019 <- left_join(dat_2019, tide_dat_2019, by = "date_hour")
+View(tide_added_2019)
+```
+
+### Reading in buoy data - 2019
 ```{r}
 channel_dat_2019_raw <- read.csv("data_raw/2019_channel_data.csv")
 str(channel_dat_2019_raw)
@@ -174,6 +194,26 @@ dat_2020 <- dat_2020 %>%
   mutate(manual_total_density = manual_total/manual_effort) %>% 
   mutate(manual_small_density = manual_small/manual_effort) %>%
   mutate(manual_large_density = manual_large/manual_effort)
+```
+
+### Reading in tide data - 2020
+```{r}
+tide_dat_2020 <- read.csv("data_raw/2020_tide_dat.txt")
+View(tide_dat_2020)
+str(tide_dat_2020)
+
+tide_dat_2020 <- tide_dat_2020 %>% 
+  rename(time = 2) %>% 
+  mutate(time = as_datetime(time, format = "%H:%M")) %>%
+  mutate(time = substring(time, 12)) %>% 
+  mutate(date = as_datetime(Date)) %>% 
+  unite(date_hour, c(date, time), sep = " ") %>% 
+  select(-c(1,3,4)) %>%
+  rename(tide = 2)
+
+dat_2020$date_hour <- as.character(dat_2020$date_hour)
+tide_added_2020 <- left_join(dat_2020, tide_dat_2020, by = "date_hour")
+View(tide_added_2020)
 ```
 
 ### Reading in environmental data - 2020
@@ -275,6 +315,26 @@ dat_2021 <- dat_2021 %>%
   mutate(manual_large_density = manual_large/manual_effort)
 ```
 
+### Reading in tide data - 2021
+```{r}
+tide_dat_2021 <- read.csv("data_raw/2021_tide_dat.txt")
+View(tide_dat_2021)
+str(tide_dat_2021)
+
+tide_dat_2021 <- tide_dat_2021 %>% 
+  rename(time = 2) %>% 
+  mutate(time = as_datetime(time, format = "%H:%M")) %>%
+  mutate(time = substring(time, 12)) %>% 
+  mutate(date = as_datetime(Date)) %>% 
+  unite(date_hour, c(date, time), sep = " ") %>% 
+  select(-c(1,3,4)) %>%
+  rename(tide = 2)
+
+dat_2021$date_hour <- as.character(dat_2021$date_hour)
+tide_added_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
+View(tide_added_2021)
+```
+
 ### Reading in environmental data - 2021
 ```{r}
 channel_dat_2021_raw <- read.csv("data_raw/2021_channel_data.csv")
@@ -326,7 +386,6 @@ size_dat_2021 %>%
   nrow()
 ```
 MUCH higher % of adults than 2020 - 3:4 ratio
-
 
 ## Three-Year ("3yr") dataset tidying
 
@@ -1087,6 +1146,34 @@ summary(wtemp_quadratic)
 plot(dat_2020_full$mean_wtemp_previous_24, fitted(dat_2020_full$manual_total_density ~ dat_2020_full$mean_wtemp_previous_24 + dat_2020_full$wtemp_2))
 ```
 
+
+## 2020 Tide Visualizations
+```{r}
+tide_added_2020 %>% 
+  ggplot(aes(x = tide.y)) +
+    geom_histogram()
+
+tide_added_2020 %>% 
+  ggplot(aes(x = tide.y, y = total_unique)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+tide_added_2020 %>% 
+  ggplot(aes(x = tide.y, y = small_unique/total_unique)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+#huh
+
+tide_added_2020 %>% 
+  ggplot(aes(x = small_unique/total_unique)) +
+    geom_freqpoly()
+#bimodal distribution of age structure
+
+tide_added_2020 %>% 
+  ggplot(aes(x = small_unique/total_unique)) +
+    geom_histogram(bins = 10)
+```
+
 ## 2020 Size-Classed Visualizations
 ```{r}
 size_dat_2020 %>% 
@@ -1204,6 +1291,38 @@ summary(size_lm_2021_quad)
 ```
 
 ### Comparing size across years
+
+Histogram of Daily Age Structure:
+```{r}
+size_classed_3yr %>% 
+  mutate(prop = juvenile/(juvenile + adult)) %>% 
+  ggplot(aes(x = prop)) +
+    geom_histogram()
+
+#no 2019:
+size_classed_3yr %>%
+  dplyr::slice(-c(1:19)) %>% 
+  mutate(prop = juvenile/(juvenile + adult)) %>% 
+  ggplot(aes(x = prop)) +
+    geom_histogram()
+
+#2020 only:
+size_classed_3yr %>%
+  dplyr::slice(-c(1:19, 71:144)) %>% 
+  mutate(prop = juvenile/(juvenile + adult)) %>% 
+  ggplot(aes(x = prop)) +
+    geom_histogram()
+
+#2021 only:
+size_classed_3yr %>%
+  dplyr::slice(-c(1:70)) %>% 
+  mutate(prop = juvenile/(juvenile + adult)) %>% 
+  ggplot(aes(x = prop)) +
+    geom_histogram()
+#VERY pronounced bimodal distribution in 2021
+#despite adults being just 40% of observations, there are MORE days where we saw only adults than where we saw only juveniles
+#WHAT factors determine "adult swim" days???
+```
 
 Histogram faceted by year:
 ```{r}
