@@ -98,14 +98,20 @@ tide_dat_2019 <- tide_dat_2019 %>%
   rename(tide = 2)
 
 dat_2019$date_hour <- as.character(dat_2019$date_hour)
-tide_added_2019 <- left_join(dat_2019, tide_dat_2019, by = "date_hour")
-View(tide_added_2019)
+dat_2019 <- left_join(dat_2019, tide_dat_2019, by = "date_hour")
+#View(dat_2019)
 ```
 
 ### Reading in buoy data - 2019
 ```{r}
-channel_dat_2019_raw <- read.csv("data_raw/2019_channel_data.csv")
-str(channel_dat_2019_raw)
+channel_dat_2019_raw <- read.table("data_raw/2019_buoy_dat.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+#str(channel_dat_2019_raw)
+#View(channel_dat_2019_raw)
 
 channel_dat_2019 <- channel_dat_2019_raw %>%
                       mutate_if(is.character, as.numeric) %>% 
@@ -126,9 +132,10 @@ channel_dat_2019 <- channel_dat_2019_raw %>%
                       mutate(mean_wtemp_previous_24 = 
                               slide_dbl(WTMP, mean, .before = 24))
 
+dat_2019$date_hour <- as_datetime(dat_2019$date_hour)
 flights_plus_channel_dat_2019 <- left_join(dat_2019, channel_dat_2019, by = "date_hour")
 
-dat_2019_full <- flights_plus_channel_dat_2019 %>%
+dat_2019 <- flights_plus_channel_dat_2019 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2)
 ```
 
@@ -150,23 +157,25 @@ size_dat_2019 %>%
   filter(size_class == "Adult") %>% 
   nrow()
 ```
-no adults!!
-
+*no adults!!
 
 ## 2020 Data Tidying
 
 ### Flight-Level Data Tidying - 2020
-* may have to pull in more code from first chunk once I start adding in environmental data
 ```{r}
 dat_2020 <- read.csv("data_raw/2020_flight_data.csv")
 #View(dat_2020)
+
 dat_2020 <- dplyr::rename(dat_2020, date = 1)
 dat_2020$date <- as_date(as.Date(dat_2020$date, "%m/%d/%Y"))
+
 dat_2020$transect_total <- as.numeric(dat_2020$transect_total)
 dat_2020$transect_small <- as.numeric(dat_2020$transect_small)
 dat_2020$transect_large <- as.numeric(dat_2020$transect_large)
+
 dat_2020$transect_datetime <- as_datetime(dat_2020$transect_datetime)
 dat_2020$manual_datetime <- as_datetime(dat_2020$manual_datetime)
+
 dat_2020 <- dat_2020 %>%
   mutate(datetime = as_datetime(
     pmin(transect_datetime, manual_datetime, na.rm = TRUE))) %>% 
@@ -216,15 +225,21 @@ tide_added_2020 <- left_join(dat_2020, tide_dat_2020, by = "date_hour")
 View(tide_added_2020)
 ```
 
-### Reading in environmental data - 2020
+### Reading in buoy data - 2020
 ```{r}
-channel_dat_2020_raw <- read.csv("data_raw/2020_channel_data.csv")
-str(channel_dat_2020_raw)
+channel_dat_2020_raw <- read.table("data_raw/2020_buoy_dat.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+#str(channel_dat_2020_raw)
+#View(channel_dat_2020_raw)
 
 channel_dat_2020 <- channel_dat_2020_raw %>%
   mutate_if(is.character, as.numeric) %>% 
-  mutate_at(vars(WVHT_m, DPD_sec, APD_sec), ~na_if(., 99)) %>%  
-  mutate_at(vars(MWD_deg, ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
+  mutate_at(vars(WVHT, DPD, APD), ~na_if(., 99)) %>%  
+  mutate_at(vars(MWD, ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
   group_by(MM, DD, hh) %>% 
   summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
   ungroup() %>% 
@@ -237,19 +252,31 @@ channel_dat_2020 <- channel_dat_2020_raw %>%
   mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
   mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
 
+dat_2020$date_hour <- as_datetime(dat_2020$date_hour)
 flights_plus_channel_dat_2020 <- left_join(dat_2020, channel_dat_2020, by = "date_hour")
+#View(flights_plus_channel_dat_2020)
 
 flights_plus_channel_dat_2020 <- flights_plus_channel_dat_2020 %>%
   dplyr::select(-c(2:8))  
 
-dat_2020_full <- flights_plus_channel_dat_2020 %>%
-  mutate(wtemp_2 = mean_wtemp_previous_24^2)
+dat_2020 <- flights_plus_channel_dat_2020 %>%
+  mutate(wtemp_2 = mean_wtemp_previous_24^2) %>% 
+  select(-c(31,32))
+#View(dat_2020)
+```
+
+### Reading in Harbor Data - 2020
+```{r}
+harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.txt")
+View(harbor_dat_2020)
+
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2020
 ```{r}
 size_dat_2020 <- read.csv("data_raw/size_dat_2020.csv")
 #View(size_dat_2020)
+
 size_dat_2020 <- size_dat_2020 %>% dplyr::slice(4:nrow(size_dat_2020))
 size_dat_2020$date <- as.Date(size_dat_2020$date, "%m/%d/%Y")
 size_dat_2020$length <- as.numeric(size_dat_2020$length)
@@ -268,24 +295,27 @@ size_dat_2020 %>%
 ```
 roughly 10x more juveniles than adults
 
-
 ## 2021 Data Tidying
 
 ### Flight-Level Data Tidying - 2021
-* may have to pull in more code from first chunk once I start adding in environmental data
 ```{r}
 dat_2021 <- read.csv("data_raw/2021_flight_data.csv")
 #View(dat_2021)
+
 dat_2021 <- dplyr::rename(dat_2021, date = 1)
 dat_2021$date <- as_date(as.Date(dat_2021$date, "%m/%d/%Y"))
+
 dat_2021$transect_total <- as.numeric(dat_2021$transect_total)
 dat_2021$transect_small <- as.numeric(dat_2021$transect_small)
 dat_2021$transect_large <- as.numeric(dat_2021$transect_large)
+
 dat_2021$manual_small <- as.numeric(dat_2021$manual_small)
 dat_2021$manual_large <- as.numeric(dat_2021$manual_large)
+dat_2021$manual_total <- as.numeric(dat_2021$manual_total)
 
 dat_2021$transect_datetime <- as_datetime(dat_2021$transect_datetime)
 dat_2021$manual_datetime <- as_datetime(dat_2021$manual_datetime)
+
 dat_2021 <- dat_2021 %>%
   mutate(datetime = as_datetime(
     pmin(transect_datetime, manual_datetime, na.rm = TRUE))) %>% 
@@ -309,7 +339,7 @@ dat_2021 <- dat_2021 %>%
   mutate(manual_duration_min = manual_duration_sec/60)
 
 dat_2021 <- dat_2021 %>% 
-  mutate(manual_effort = manual_area_km2*manual_duration_min) %>% 
+  mutate(manual_effort = as.numeric(manual_area_km2*manual_duration_min)) %>% 
   mutate(manual_total_density = manual_total/manual_effort) %>% 
   mutate(manual_small_density = manual_small/manual_effort) %>%
   mutate(manual_large_density = manual_large/manual_effort)
@@ -318,8 +348,8 @@ dat_2021 <- dat_2021 %>%
 ### Reading in tide data - 2021
 ```{r}
 tide_dat_2021 <- read.csv("data_raw/2021_tide_dat.txt")
-View(tide_dat_2021)
-str(tide_dat_2021)
+#View(tide_dat_2021)
+#str(tide_dat_2021)
 
 tide_dat_2021 <- tide_dat_2021 %>% 
   rename(time = 2) %>% 
@@ -331,47 +361,59 @@ tide_dat_2021 <- tide_dat_2021 %>%
   rename(tide = 2)
 
 dat_2021$date_hour <- as.character(dat_2021$date_hour)
-tide_added_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
-View(tide_added_2021)
+dat_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
+#View(dat_2021)
 ```
 
-### Reading in environmental data - 2021
+### Reading in buoy data - 2021 - Waiting for Data (last checked 1/12/2021)
 ```{r}
-channel_dat_2021_raw <- read.csv("data_raw/2021_channel_data.csv")
-str(channel_dat_2021_raw)
+channel_dat_2021_raw <- read.table("data_raw/2021_buoy_dat.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+#str(channel_dat_2021_raw)
+#View(channel_dat_2021_raw)
 
 channel_dat_2021 <- channel_dat_2021_raw %>%
-                      mutate_if(is.character, as.numeric) %>% 
-                      mutate_at(vars(WVHT, DPD, APD, MWD), ~na_if(., 99)) %>%  
-                      mutate_at(vars(ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
-                      group_by(MM, DD, hh) %>% 
-                      summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
-                      ungroup() %>% 
-                      filter(MM > 3) %>% 
-                      add_column(year = 2021, .before = 1) %>% 
-                      mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
-                      mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
-                      mutate(date_hour = round_date(datetime, "hour")) %>% 
-                      mutate(max_wtemp_previous_24 = 
-                              slide_dbl(WTMP, max, .before = 24)) %>% 
-                      mutate(min_wtemp_previous_24 = 
-                              slide_dbl(WTMP, min, .before = 24)) %>% 
-                      mutate(mean_wtemp_previous_24 = 
-                              slide_dbl(WTMP, mean, .before = 24))
+  mutate_if(is.character, as.numeric) %>% 
+  mutate_at(vars(WVHT, DPD, APD), ~na_if(., 99)) %>%  
+  mutate_at(vars(MWD, ATMP, WTMP, DEWP), ~na_if(., 999)) %>%
+  group_by(MM, DD, hh) %>% 
+  summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
+  ungroup() %>% 
+  filter(MM > 4) %>% 
+  add_column(year = 2021, .before = 1) %>% 
+  mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
+  mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
+  mutate(date_hour = round_date(datetime, "hour")) %>% 
+  mutate(max_wtemp_previous_24 = slide_dbl(WTMP, max, .before = 24)) %>% 
+  mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
+  mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
 
-flights_plus_channel_dat_2021 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
+dat_2021$date_hour <- as_datetime(dat_2021$date_hour)
+flights_plus_channel_dat_2020 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
+#View(flights_plus_channel_dat_2020)
 
-dat_2021_full <- flights_plus_channel_dat_2021 %>%
-  mutate(wtemp_2 = mean_wtemp_previous_24^2)
+flights_plus_channel_dat_2021 <- flights_plus_channel_dat_2021 %>%
+  dplyr::select(-c(2:8))  
+
+dat_2021 <- flights_plus_channel_dat_2021 %>%
+  mutate(wtemp_2 = mean_wtemp_previous_24^2) %>% 
+  select(-c(31,32))
+#View(dat_2021)
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2021
 ```{r}
 size_dat_2021 <- read.csv("data_raw/size_dat_2021.csv")
 #View(size_dat_2021)
+
 size_dat_2021 <- size_dat_2021 %>% dplyr::slice(3:nrow(size_dat_2021))
 size_dat_2021$date <- as.Date(size_dat_2021$date, "%m/%d/%Y")
 size_dat_2021$length <- as.numeric(size_dat_2021$length)
+
 size_dat_2021 <- size_dat_2021 %>% 
                   mutate(length_m = length/3.2808)
 size_dat_2021 <- size_dat_2021 %>% 
@@ -385,7 +427,7 @@ size_dat_2021 %>%
   filter(size_class == "Juvenile") %>% 
   nrow()
 ```
-MUCH higher % of adults than 2020 - 3:4 ratio
+MUCH higher % of adults than 2020 - 2:3 ratio
 
 ## Three-Year ("3yr") dataset tidying
 
