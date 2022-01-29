@@ -52,6 +52,8 @@ library(cowplot)
 ```{r}
 dat_2019 <- read.csv("data_raw/2019_flight_data.csv")
 #View(dat_2019)
+
+dat_2019[dat_2019 == ""] <- NA
 dat_2019 <- mutate(dat_2019, total_unique = transect_total)
 dat_2019$date[93:96] <- as.character(c(
   "10/25/2019", "10/28/2019", "10/30/2019", "11/4/2019"))
@@ -61,9 +63,10 @@ dat_2019$large<- as.numeric(as.character(dat_2019$large))
 dat_2019$transect_total <- as.numeric(dat_2019$transect_total)
 dat_2019$transect_small <- as.numeric(dat_2019$transect_small)
 dat_2019$transect_large <- as.numeric(dat_2019$transect_large)
+
 dat_2019 <- dat_2019 %>%
-  mutate(datetime = as_datetime(transect_datetime)) %>% 
-  mutate(date_hour = round_date(datetime, "hour"))
+  mutate(datetime = ifelse(detection == "N" & is.na(transect_datetime), as.character(date), transect_datetime)) %>% 
+  mutate(date_hour = round_date(as_datetime(transect_datetime), "hour"))
 ```
 
 ### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2019
@@ -85,8 +88,8 @@ dat_2019 <- dat_2019 %>%
 ### Reading in tide data - 2019
 ```{r}
 tide_dat_2019 <- read.csv("data_raw/2019_tide_dat.txt")
-View(tide_dat_2019)
-str(tide_dat_2019)
+#View(tide_dat_2019)
+#str(tide_dat_2019)
 
 tide_dat_2019 <- tide_dat_2019 %>% 
   rename(time = 2) %>% 
@@ -269,6 +272,7 @@ dat_2020 <- flights_plus_channel_dat_2020 %>%
 ```{r}
 harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.txt")
 View(harbor_dat_2020)
+
 
 ```
 
@@ -1361,6 +1365,7 @@ size_classed_3yr %>%
   mutate(prop = juvenile/(juvenile + adult)) %>% 
   ggplot(aes(x = prop)) +
     geom_histogram()
+ggsave("plots/adult_swim.png")
 #VERY pronounced bimodal distribution in 2021
 #despite adults being just 40% of observations, there are MORE days where we saw only adults than where we saw only juveniles
 #WHAT factors determine "adult swim" days???
