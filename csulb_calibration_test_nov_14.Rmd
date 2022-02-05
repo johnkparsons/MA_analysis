@@ -10,6 +10,26 @@ knitr::opts_knit$set("C:/Users/Dell/Desktop/MA_analysis")
 library(gt)
 ```
 
+# Comparing between drones
+```{r}
+library(tidyverse)
+
+comp_dat <- read.csv("data_raw/csulb_tests_nov_14/drone_comp.txt")
+View(comp_dat)
+
+comp_dat %>% 
+  group_by(test_alt, drone) %>% 
+  summarize(pvc = list(mean_se(size_pvc_asl)), board = list(mean_se((size_board_asl)))) %>% 
+  unnest(pvc) %>% 
+  mutate(se_pvc = y - ymin) %>% 
+  rename(pvc = y) %>% 
+  select(-c(4,5)) %>% 
+  unnest(board) %>% 
+  mutate(se_board = y - ymin) %>% 
+  rename(board = y) %>% 
+  select(-c(5,6))
+```
+
 # Submerged test (1.5 m depth)
 ```{r}
 BOI_1_sub_dat <- read.csv("data_raw/csulb_tests_nov_14/BOI_1_submerged_JP_calculations.csv")
@@ -236,4 +256,33 @@ LL_surface_dat %>%
     geom_hline(yintercept = 2.93, linetype = 2, color = "red")
 ```
 
+# AUV tests
+```{r}
+AUV.dat <- read.csv("data_raw/JP_measurements.csv")
+View(AUV.dat)
 
+AUV.dat <- mutate(AUV.dat, raw = if_else(is.na(yellow), full, yellow))
+```
+
+## Uncorrected estimates
+```{r}
+AUV.dat %>% 
+  filter(depth < 3) %>% 
+  ggplot(aes(x = SRT_alt, y = raw)) +
+    geom_point() +
+    geom_smooth() +
+    geom_hline(yintercept = c(1.725, 2.4)) +
+    facet_wrap(vars(depth))
+ggsave("plots/SRT_vs_raw_estimate.png")
+```
+## Corrected errors
+```{r}
+AUV.dat %>% 
+  filter(depth < 3) %>% 
+  ggplot(aes(x = SRT_alt, y = error)) +
+    geom_point() +
+    geom_smooth() +
+    geom_hline(yintercept = 1) +
+    facet_grid(cols = vars(depth))
+ggsave("plots/SRT_vs_errors.png")
+```

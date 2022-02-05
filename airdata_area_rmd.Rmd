@@ -31,12 +31,26 @@ library(rlist)
 ```{r}
 #arguments are csv name (or list of names), filepath to csv or list, horizontal and vertical field of view (meters), altitude (meters), and altitude error allowance
 effort <- function(filename, FOV_x = 51.6, FOV_y = 29.0, alt = 40, alt_error = 0.5) {
-
+  
 airdata <- read.csv(file.path(filename))
 
-#set horizontal and vertical distance from UAV position to edge of FOV:
-x_offset <- 1.0965*(FOV_x/2)
-y_offset <- 1.0965*(FOV_y/2)  
+### ALTERNATIVE 1: calculate FOV from altitude taken from each airdata file
+
+#dummy code (I think this will only work for manual flights):
+ASL <- airdata %>% 
+  filter(isTakingVideo == 1) %>% 
+  filter(altitude > 39.5) %>% 
+  filter(altitude < 40.5) %>% 
+  mean(altitude)
+
+x_offset <- 1.0965*((16/9)*ASL*TAN(1.274090354/2))/SQRT(1+(16/9)^2)
+#REPLACE ASL WITH AVERAGE ALTITUDE ASL IN AIRDATA FILE
+y_offset <- 1.0965*((ASL*TAN(1.274090354/2))/SQRT(1+(16/9)^2)) 
+#REPLACE ASL WITH AVERAGE ALTITUDE ASL IN AIRDATA FILE
+
+### ALTERNATIVE 2: set horizontal and vertical distance from UAV position to edge of FOV:
+x_offset2 <- 1.0965*(FOV_x/2)
+y_offset2 <- 1.0965*(FOV_y/2)  
 
 #find coordinates for the four corners of the frame:
 coords <- airdata %>%
@@ -92,7 +106,9 @@ duration <- airdata %>%
                   (last(airdata$time.millisecond.)/nrow(airdata))) %>% 
   summarize(time = sum(time)/1000)
 
-data.frame(str_remove(str_remove(filename, "data_raw/transect_csvs_2021/"), "_v2.csv"), area, duration, alt, alt_error)
+data.frame(str_remove(str_remove(filename, "data_raw/transect_csvs_2021/"), "_v2.csv"), area, duration, alt, alt_error, ASL)
+#REPLACE ASL WITH NAME OF COLUMN IN AIRDATA FILE
+
 }
 #end of "effort" function
 

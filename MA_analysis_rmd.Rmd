@@ -369,16 +369,93 @@ dat_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
 #View(dat_2021)
 ```
 
-### Reading in buoy data - 2021 - Waiting for Data (last checked 1/12/2021)
+### Reading in buoy data - 2021
 ```{r}
-channel_dat_2021_raw <- read.table("data_raw/2021_buoy_dat.txt", header = FALSE, 
+channel_dat_2021_jan <- read.table("data_raw/2021_buoy_dat_jan.txt", header = FALSE, 
                                    col.names = c("#YY","MM","DD","hh","mm",
                                                  "WDIR","WSPD","GST","WVHT",
                                                  "DPD","APD","MWD","PRES",
                                                  "ATMP","WTMP","DEWP","VIS",
                                                  "TIDE"))
-#str(channel_dat_2021_raw)
-#View(channel_dat_2021_raw)
+
+channel_dat_2021_feb <- read.table("data_raw/2021_buoy_dat_feb.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_mar <- read.table("data_raw/2021_buoy_dat_mar.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_apr <- read.table("data_raw/2021_buoy_dat_apr.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_may <- read.table("data_raw/2021_buoy_dat_may.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_jun <- read.table("data_raw/2021_buoy_dat_jun.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_jul <- read.table("data_raw/2021_buoy_dat_jul.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_aug <- read.table("data_raw/2021_buoy_dat_aug.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_sep <- read.table("data_raw/2021_buoy_dat_sep.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_oct <- read.table("data_raw/2021_buoy_dat_oct.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_nov <- read.table("data_raw/2021_buoy_dat_nov.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_dec <- read.table("data_raw/2021_buoy_dat_dec.txt", header = FALSE, 
+                                   col.names = c("#YY","MM","DD","hh","mm",
+                                                 "WDIR","WSPD","GST","WVHT",
+                                                 "DPD","APD","MWD","PRES",
+                                                 "ATMP","WTMP","DEWP","VIS",
+                                                 "TIDE"))
+
+channel_dat_2021_raw <- dplyr::bind_rows(channel_dat_2021_jan, channel_dat_2021_feb, channel_dat_2021_mar, channel_dat_2021_apr, channel_dat_2021_may, channel_dat_2021_jun, channel_dat_2021_jul, channel_dat_2021_aug, channel_dat_2021_sep, channel_dat_2021_oct, channel_dat_2021_nov, channel_dat_2021_dec)
 
 channel_dat_2021 <- channel_dat_2021_raw %>%
   mutate_if(is.character, as.numeric) %>% 
@@ -395,10 +472,11 @@ channel_dat_2021 <- channel_dat_2021_raw %>%
   mutate(max_wtemp_previous_24 = slide_dbl(WTMP, max, .before = 24)) %>% 
   mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
   mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
+View(channel_dat_2021)
 
 dat_2021$date_hour <- as_datetime(dat_2021$date_hour)
-flights_plus_channel_dat_2020 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
-#View(flights_plus_channel_dat_2020)
+flights_plus_channel_dat_2021 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
+View(flights_plus_channel_dat_2021)
 
 flights_plus_channel_dat_2021 <- flights_plus_channel_dat_2021 %>%
   dplyr::select(-c(2:8))  
