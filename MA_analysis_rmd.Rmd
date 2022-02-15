@@ -7,13 +7,14 @@ output: html_document
 
 #Setup
 ```{r, eval=FALSE}
-#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot"))
-#install.packages("cowplot")
+#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER"))
+#install.packages("sjstats")
 library(tidyverse)
 #library(plyr); library(dplyr)
 library(lme4) #modelling
 library(glmmTMB) #modelling
 library(DHARMa) #model diagnostics
+library(sjstats)
 library(effects)
 library(broom.mixed)
 library(MuMIn)
@@ -38,6 +39,10 @@ library(emmeans)#effects testing
 library(gt)#nice tables
 library(webshot) #saving gt tables
 library(cowplot)
+library(simfit) #simulating models
+library(jtools)
+library(ggstance)
+library(AER)
 #webshot::install_phantomjs() 
 #citation("ptest")
 ```
@@ -85,7 +90,7 @@ dat_2019 <- dat_2019 %>%
                                           transect_large/transect_effort))
 ```
 
-### Reading in tide data - 2019
+### Reading in tide data (Station 9411340) - 2019
 ```{r}
 tide_dat_2019 <- read.csv("data_raw/2019_tide_dat.txt")
 #View(tide_dat_2019)
@@ -105,7 +110,7 @@ dat_2019 <- left_join(dat_2019, tide_dat_2019, by = "date_hour")
 #View(dat_2019)
 ```
 
-### Reading in buoy data - 2019
+### Reading in channel buoy data (Station 46053) - 2019
 ```{r}
 channel_dat_2019_raw <- read.table("data_raw/2019_buoy_dat.txt", header = FALSE, 
                                    col.names = c("#YY","MM","DD","hh","mm",
@@ -208,10 +213,10 @@ dat_2020 <- dat_2020 %>%
   mutate(manual_large_density = manual_large/manual_effort)
 ```
 
-### Reading in tide data - 2020
+### Reading in tide data (Station 9411340)- 2020
 ```{r}
 tide_dat_2020 <- read.csv("data_raw/2020_tide_dat.txt")
-View(tide_dat_2020)
+#View(tide_dat_2020)
 str(tide_dat_2020)
 
 tide_dat_2020 <- tide_dat_2020 %>% 
@@ -225,10 +230,10 @@ tide_dat_2020 <- tide_dat_2020 %>%
 
 dat_2020$date_hour <- as.character(dat_2020$date_hour)
 tide_added_2020 <- left_join(dat_2020, tide_dat_2020, by = "date_hour")
-View(tide_added_2020)
+#View(tide_added_2020)
 ```
 
-### Reading in buoy data - 2020
+### Reading in channel buoy data (Station 46053) - 2020
 ```{r}
 channel_dat_2020_raw <- read.table("data_raw/2020_buoy_dat.txt", header = FALSE, 
                                    col.names = c("#YY","MM","DD","hh","mm",
@@ -255,12 +260,9 @@ channel_dat_2020 <- channel_dat_2020_raw %>%
   mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
   mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
 
-dat_2020$date_hour <- as_datetime(dat_2020$date_hour)
-flights_plus_channel_dat_2020 <- left_join(dat_2020, channel_dat_2020, by = "date_hour")
+tide_added_2020$date_hour <- as_datetime(tide_added_2020$date_hour)
+flights_plus_channel_dat_2020 <- left_join(tide_added_2020, channel_dat_2020, by = "date_hour")
 #View(flights_plus_channel_dat_2020)
-
-flights_plus_channel_dat_2020 <- flights_plus_channel_dat_2020 %>%
-  dplyr::select(-c(2:8))  
 
 dat_2020 <- flights_plus_channel_dat_2020 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2) %>% 
@@ -268,12 +270,23 @@ dat_2020 <- flights_plus_channel_dat_2020 %>%
 #View(dat_2020)
 ```
 
-### Reading in Harbor Data - 2020
+### Reading in SB harbor data (Station 9411340) - 2020
 ```{r}
-harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.txt")
+harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.csv")
 View(harbor_dat_2020)
 
-
+harbor_dat_2020 <- harbor_dat_2020 %>% 
+              rename(time = 2) %>% 
+              mutate(time = as_datetime(time)) %>% 
+              mutate(YY = year(Date)) %>% 
+              mutate(MM = month(Date)) %>% 
+              mutate(DD = day(Date)) %>% 
+              mutate(hh = hour(time)) %>% 
+              mutate(mm = minute(time))
+              
+dat_2020 <- left_join(dat_2020, harbor_dat_2020, by = "date_hour")
+dat_2020 <- dat_2020 %>% 
+  rename(wharf_temp = temperature)
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2020
@@ -349,7 +362,7 @@ dat_2021 <- dat_2021 %>%
   mutate(manual_large_density = manual_large/manual_effort)
 ```
 
-### Reading in tide data - 2021
+### Reading in tide data (Station 9411340) - 2021
 ```{r}
 tide_dat_2021 <- read.csv("data_raw/2021_tide_dat.txt")
 #View(tide_dat_2021)
@@ -369,7 +382,7 @@ dat_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
 #View(dat_2021)
 ```
 
-### Reading in buoy data - 2021
+### Reading in channel buoy data (Station 46053) - 2021
 ```{r}
 channel_dat_2021_jan <- read.table("data_raw/2021_buoy_dat_jan.txt", header = FALSE, 
                                    col.names = c("#YY","MM","DD","hh","mm",
@@ -456,6 +469,7 @@ channel_dat_2021_dec <- read.table("data_raw/2021_buoy_dat_dec.txt", header = FA
                                                  "TIDE"))
 
 channel_dat_2021_raw <- dplyr::bind_rows(channel_dat_2021_jan, channel_dat_2021_feb, channel_dat_2021_mar, channel_dat_2021_apr, channel_dat_2021_may, channel_dat_2021_jun, channel_dat_2021_jul, channel_dat_2021_aug, channel_dat_2021_sep, channel_dat_2021_oct, channel_dat_2021_nov, channel_dat_2021_dec)
+View(channel_dat_2021_raw)
 
 channel_dat_2021 <- channel_dat_2021_raw %>%
   mutate_if(is.character, as.numeric) %>% 
@@ -464,7 +478,7 @@ channel_dat_2021 <- channel_dat_2021_raw %>%
   group_by(MM, DD, hh) %>% 
   summarize_at(vars(3:13), mean, na.rm = TRUE) %>%
   ungroup() %>% 
-  filter(MM > 4) %>% 
+  filter(MM > 3) %>% 
   add_column(year = 2021, .before = 1) %>% 
   mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
   mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
@@ -478,13 +492,10 @@ dat_2021$date_hour <- as_datetime(dat_2021$date_hour)
 flights_plus_channel_dat_2021 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
 View(flights_plus_channel_dat_2021)
 
-flights_plus_channel_dat_2021 <- flights_plus_channel_dat_2021 %>%
-  dplyr::select(-c(2:8))  
-
 dat_2021 <- flights_plus_channel_dat_2021 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2) %>% 
   select(-c(31,32))
-#View(dat_2021)
+View(dat_2021)
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2021
@@ -653,7 +664,7 @@ daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(adult_density = adult/(transect_effort + manual_effort))
 ```
 
-## Adding wharf data
+## Adding wharf data - not sure why I needed this?
 ```{r}
 wharf_dat <- read.csv("data_raw/wharf_dat.csv")
 
@@ -681,7 +692,143 @@ dat_no_19 <- daily_3yr_dat %>%
   filter(year(transect_datetime) != 2019)
 ```
 
-===========================================================================================
+===============================================================================
+
+# Analyses for Thesis
+
+## Patterns of Abundance
+
+### What are the average and range of detections?
+```{r}
+daily_3yr_dat %>% 
+  group_by(year(date)) %>% 
+  summarize("Total sightings" = sum(total_unique, na.rm = TRUE),
+            "Survey days" = n(),
+            "Sightings per day" = sum(total_unique, na.rm = TRUE)/n(),
+            "Maximum abundance" = max(total_unique, na.rm = TRUE)) %>% 
+  gt() %>% 
+    fmt_number(columns = 4, decimals = 2) %>% 
+    cols_label("year(date)" = "Year") %>% 
+    cols_width("Total sightings" ~ px(80),
+               "Maximum abundance" ~ px(80),
+               "Sightings per day" ~ px(80)) %>% 
+    cols_align(align = "center")
+```
+
+### Do detections vary across years? (GLM)
+
+```{r}
+daily_3yr_dat <- mutate(daily_3yr_dat, year = as_factor(year(date)))
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = year, y = total_unique)) +
+    geom_violin()
+
+ggplot(daily_3yr_dat, aes(x = total_unique)) +
+  geom_bar()
+#very zero-inflated
+
+ggplot(daily_3yr_dat, aes(x = log1p(total_unique))) +
+  geom_bar()
+#going to need poisson
+
+year_poisson_mod <- glm(total_unique ~ year, family = "poisson", data = daily_3yr_dat)
+
+summary(year_poisson_mod)
+dispersiontest(year_poisson_mod)
+ypm_res <- simulateResiduals(year_poisson_mod)
+plot(ypm_res)
+#definitely overdispersed
+
+year_qpois_mod <- glm(total_unique ~ year, family = "quasipoisson", data = daily_3yr_dat)
+
+summary(year_qpois_mod)
+
+year_nb_mod <- glmmTMB(total_unique ~ year, family = nbinom2, data = daily_3yr_dat)
+
+summary(year_nb_mod)
+ynm_res <- simulateResiduals(year_nb_mod)
+plot(ynm_res)
+#dispersion still significant
+
+year_nb1_mod <- glmmTMB(total_unique ~ year, family = nbinom1, data = daily_3yr_dat)
+
+summary(year_nb1_mod)
+yn1m_res <- simulateResiduals(year_nb1_mod)
+plot(yn1m_res)
+#Negative binomial 1 checks out
+
+pairs(emmeans(year_nb1_mod, ~year))
+
+daily_3yr_dat %>% 
+  group_by(year) %>% 
+  summarize(mean = mean(total_unique, na.rm = TRUE))
+```
+
+* based on GLM with ONLY year, total unique sightings increased each year from 2019 to 2021 (p < 0.001)
+
+### Manual sightings only:
+```{r}
+daily_3yr_dat %>% 
+  ggplot(aes(x = year, y = manual_unique)) +
+    geom_violin()
+
+year_manual_mod <- glmmTMB(manual_unique ~ year, family = nbinom1, data = daily_3yr_dat)
+
+summary(year_manual_mod)
+ymm_res <- simulateResiduals(year_manual_mod)
+plot(ymm_res)
+#Negative binomial 1 checks out
+
+pairs(emmeans(year_manual_mod, ~year))
+
+daily_3yr_dat %>% 
+  group_by(year) %>% 
+  summarize(mean = mean(manual_unique, na.rm = TRUE))
+```
+* based on GLM with ONLY year, manual unique sightings were higher in 2021 than 2020 (p < 0.005)
+
+### Do detections vary across the field season? (NEED TO REPLICATE THIS WITH TOTAL DENSITY (total_unique/total_area) INSTEAD OF TOTAL UNIQUE COUNT)
+```{r}
+daily_3yr_dat <- mutate(daily_3yr_dat, day = yday(date))
+daily_3yr_dat <- mutate(daily_3yr_dat, day2 = (yday(date))^2)
+
+season_lm <- lm(total_unique ~ day, data = daily_3yr_dat)
+summary(season_lm)
+#no apparent linear trend
+
+season2_lm <- lm(total_unique ~ day + day2, data = daily_3yr_dat)
+summary(season2_lm)
+#no quadratic trend (not sure this is a meaningful test anyways)
+
+#adding day to the year model:
+daily_3yr_narm <- daily_3yr_dat %>% 
+  filter(!is.na(total_unique))
+season_glm <- glmmTMB(total_unique ~ year*day, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+summary(season_glm)
+
+dredge(season_glm)
+#day*year interaction model is only good candidate 
+
+sm_res <- simulateResiduals(season_glm)
+plot(sm_res)
+#minor issue with quantiles. Don't think it is a problem based on what I've read about that test
+```
+* Best model to explain total unique sightings includes day, year, and their interaction.
+
+### Do manual counts vary across the field season?
+```{r}
+#adding day to the year model:
+daily_3yr_narm_manual <- daily_3yr_dat %>% 
+  filter(!is.na(manual_unique))
+season_glm_man <- glmmTMB(manual_unique ~ year*day, family = nbinom1, data = daily_3yr_narm_manual, na.action = "na.fail")
+summary(season_glm_man)
+
+dredge(season_glm_man)
+# day + year, day*year, and day-only are all equally weighted for manual count model
+```
+
+===============================================================================
 
 # Exploratory Visualizations
 * Older individual year visualizations are below 3yr visualizations
@@ -1901,7 +2048,7 @@ median(size_dat_2020$length, na.rm = TRUE)
 sum(size_dat_2020$size_class == "Adult" & size_dat_2020$unique == "Y", na.rm = "TRUE")/sum(size_dat_2020$unique == "Y", na.rm = "TRUE")
 ```
 
-================================================================================================
+
 
 # Modelling
 
