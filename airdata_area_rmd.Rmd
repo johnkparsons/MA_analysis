@@ -5,6 +5,8 @@ date: "`r Sys.Date()`"
 output:
   word_document: default
   pdf_document: default
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -27,30 +29,35 @@ library(data.table)
 library(rlist)
 ```
 
-## Applying "effort" function to all files iteratively
+```{r}
+### ALTERNATIVE 1: calculate FOV from altitude taken from each airdata file
+
+#dummy code (I think this will only work for manual flights):
+#ASL <- airdata %>% 
+  #filter(isTakingVideo == 1) %>% 
+  #filter(altitude > 39.5) %>% 
+  #filter(altitude < 40.5) %>% 
+  #mean(altitude)
+
+#x_offset <- 1.0965*((16/9)*ASL*TAN(1.274090354/2))/SQRT(1+(16/9)^2)
+#REPLACE ASL WITH AVERAGE ALTITUDE ASL IN AIRDATA FILE
+#y_offset <- 1.0965*((ASL*TAN(1.274090354/2))/SQRT(1+(16/9)^2)) 
+#REPLACE ASL WITH AVERAGE ALTITUDE ASL IN AIRDATA FILE
+
+### ALTERNATIVE 2: set horizontal and vertical distance from UAV position to edge of FOV:
+
+```
+
+
+# Applying "effort" function to all files iteratively
 ```{r}
 #arguments are csv name (or list of names), filepath to csv or list, horizontal and vertical field of view (meters), altitude (meters), and altitude error allowance
 effort <- function(filename, FOV_x = 51.6, FOV_y = 29.0, alt = 40, alt_error = 0.5) {
   
 airdata <- read.csv(file.path(filename))
 
-### ALTERNATIVE 1: calculate FOV from altitude taken from each airdata file
-
-#dummy code (I think this will only work for manual flights):
-ASL <- airdata %>% 
-  filter(isTakingVideo == 1) %>% 
-  filter(altitude > 39.5) %>% 
-  filter(altitude < 40.5) %>% 
-  mean(altitude)
-
-x_offset <- 1.0965*((16/9)*ASL*TAN(1.274090354/2))/SQRT(1+(16/9)^2)
-#REPLACE ASL WITH AVERAGE ALTITUDE ASL IN AIRDATA FILE
-y_offset <- 1.0965*((ASL*TAN(1.274090354/2))/SQRT(1+(16/9)^2)) 
-#REPLACE ASL WITH AVERAGE ALTITUDE ASL IN AIRDATA FILE
-
-### ALTERNATIVE 2: set horizontal and vertical distance from UAV position to edge of FOV:
-x_offset2 <- 1.0965*(FOV_x/2)
-y_offset2 <- 1.0965*(FOV_y/2)  
+x_offset <- 1.0965*(FOV_x/2)
+y_offset <- 1.0965*(FOV_y/2)  
 
 #find coordinates for the four corners of the frame:
 coords <- airdata %>%
@@ -71,7 +78,7 @@ ps <- list()
 #extract rectangles as polygons:
 for (i in 1:nrow(coords)) {
   rect <- coords %>% 
-          slice(i)
+          dplyr::slice(i)
   p <- rect %>% 
             add_row(x0 = rect$x1, y0 = rect$y1) %>% 
             add_row(x0 = rect$x2, y0 = rect$y2) %>% 
@@ -90,11 +97,11 @@ ID <- sample(1, length(sps), replace = T)
 #list of IDs, each SpatialPolygon is given same ID
 agg <- unionSpatialPolygons(sps, ID)
 #this function aggregates all SpatialPolygons into a single SpatialPolygon
-
 area <- areaPolygon(agg)
+#calculates area of aggregated polygon
 
 duration <- airdata %>% 
-  #filter(isTakingVideo == 1) %>% 
+  filter(isTakingVideo == 1) %>% 
   select(altitude.m., time.millisecond.) %>%
   mutate(alt_grp = ifelse(altitude.m. < (alt + alt_error) & 
                           altitude.m. > (alt - alt_error), 1, 0)) %>% 
@@ -105,49 +112,71 @@ duration <- airdata %>%
   summarize(time = last(time.millisecond.) - first(time.millisecond.) +
                   (last(airdata$time.millisecond.)/nrow(airdata))) %>% 
   summarize(time = sum(time)/1000)
+# "video == 1" line is only for transect flights - I should make this an argument rather than something you have to change in the code for the program itself
 
-data.frame(str_remove(str_remove(filename, "data_raw/transect_csvs_2021/"), "_v2.csv"), area, duration, alt, alt_error, ASL)
-#REPLACE ASL WITH NAME OF COLUMN IN AIRDATA FILE
+data.frame(str_remove(str_remove(filename, "data_raw/transect_csvs_2021_to_run/"), "_v2.csv"), area, duration, alt, alt_error)
+#this has to be updated with file location and whatever part of the file name you don't want to keep - in this case I get rid of end of the file name so I can keep the datetime part of the file name
 
 }
 #end of "effort" function
 
-#implement tryCatch
+#test of single file:
+#effort("data_raw/manual_csvs/2021-05-17_14-50-50_v2.csv")
+
+#implement tryCatch so errors don't stop the program when running multiple files:
 effort_catch <- function(x) tryCatch(effort(x), error = function(e) e)
 
 #test of single file:
-#effort_catch("data_raw/manual_csvs/2020-07-14_17-33-24_v2.csv")
+#effort_catch("data_raw/manual_csvs/2021-05-17_14-50-50_v2.csv")
 
-#calculate effort from manual files:
-names_2021 <- list.files("data_raw/transect_csvs_2021", full.names = TRUE)
+#calculate effort from folder of files:
+names_2021 <- list.files("data_raw/transect_csvs_2021_to_run", full.names = TRUE)
 View(names_2021)
 
-effort_summary_2021 <- lapply(names_2021, effort_catch)
+effort_summary_2021_transects <- lapply(names_2021, effort_catch)
 
-View(effort_summary_2021)
+View(effort_summary_2021_transects)
 ```
 
 ```{r}
-effort_summary_2021 <- effort_summary_2021[-2]
+effort_summary_2021_transects_raw <- effort_summary_2021_transects #so you don't have to re-run entire thing if you mess it up
 
-efforts_2021 <- do.call(rbind, effort_summary_2021)
+#effort_summary_2021 <- effort_summary_2021_raw[-1]
+# 4/21/2021 "altitude.m" not found, will calculate effort separately for this day
 
-transect_efforts_2021 <- dplyr::rename(efforts_2021,"datetime" = 1)
+transect_efforts_2021 <- do.call(rbind, effort_summary_2021_transects)
+#splits each day's list with 5 items each into a single row with 5 columns
 
-manual_efforts$datetime <- gsub("data_raw/manual_csvs/", "", manual_efforts$datetime)
-manual_efforts$datetime <- gsub("_v2", "", manual_efforts$datetime)
-manual_efforts$datetime <- gsub("csv", "", manual_efforts$datetime)
+transect_efforts_2021 <- dplyr::rename(transect_efforts_2021,"datetime" = 1)
+#datetime is conveniently contained within name of Airdata file
+
+#manual_efforts$datetime <- gsub("data_raw/manual_csvs/", "", manual_efforts$datetime)
+#manual_efforts$datetime <- gsub("_v2", "", manual_efforts$datetime)
+#manual_efforts$datetime <- gsub("csv", "", manual_efforts$datetime)
+#above lines were necessary before I added similar code within the effort program
+
+ggplot(transect_efforts_2021, aes(x = area)) +
+  geom_histogram()
+```
+
+Attaching problem file from 4/21/2021 and writing effort file:
+```{r}
+new_effort <- new_effort %>% 
+  rename(datetime = 1)
+
+manual_efforts_2021 <- manual_efforts_2021 %>% 
+  bind_rows(., new_effort) %>% 
+  distinct(., datetime, .keep_all = T)
 
 write.csv(transect_efforts_2021, "data_raw/transect_efforts_2021.csv", row.names = F)
 
-ggplot(manual_efforts, aes(x = area)) +
-  geom_histogram()
+View(manual_efforts_2021)
+```
 
-mean_area <- transect_efforts %>% 
+```{r}
+transect_efforts %>% 
   #filter(area > 150000 & area < 200000) %>% 
   summarize(mean = mean(area))
-mean_area
-#remove outliers (for transect flights only) and calculate mean area
 
 ggplot(transect_efforts, aes(x = time)) +
   geom_histogram()
@@ -208,12 +237,12 @@ airdata %>%
 
 ```{r}
 # EDIT HERE to change .csv filename
-airdata <- read.csv("data_raw/transect_csvs_2021/2021-04-21_11-51-05_v2.csv")
+airdata <- read.csv("data_raw/transect_csvs_2021_non_v2/Oct-26th-2021-02-35PM-Flight-Airdata.csv")
 #make sure this is the v2.csv, not Standard.csv, and include ".csv" at end of file path
 #View(airdata)
 
-# EDIT HERE to change datetime (name) of survey - for data export
-dt <- "2021-04-21_11-51-05"
+# EDIT HERE to change datetime (name) of survey (for data export)
+dt <- "2021-10-26_14-35-00"
 #datetime of survey, from airdata .csv filename
 
 # EDIT HERE to change FOV width (default 51.6 is long (horizontal) side of FOV @ 40 m)
@@ -239,12 +268,26 @@ y_offset <- 1.0965*(FOV_y/2)
 
 ### Generate df with all points at search altitude, add corner coordinates of FOV for each center point:
 ```{r}
-airdata <- mutate(airdata, altitude.m. = altitude.feet./3.218)
+View(airdata)
 
 coords <- airdata %>%
-  #filter(isTakingVideo == 1) %>% 
+  filter(isTakingVideo == 1) %>% 
   filter(altitude.m. >= alt - alt_error) %>% 
   filter(altitude.m. <= alt + alt_error) %>% 
+  mutate(x0 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y0 = latitude - (180/pi)*(y_offset/6378137),
+         x1 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
+         y1 = latitude + (180/pi)*(y_offset/6378137),
+         x2 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y2 = latitude + (180/pi)*(y_offset/6378137),
+         x3 = longitude + (180/pi)*(x_offset/6378137)/cos(latitude),
+         y3 = latitude - (180/pi)*(y_offset/6378137))
+
+#for non-V2 files:
+coords <- airdata %>%
+  filter(isVideo == 1) %>% 
+  filter(height_above_takeoff.feet. >= 130) %>% 
+  filter(height_above_takeoff.feet. <= 134) %>% 
   mutate(x0 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
          y0 = latitude - (180/pi)*(y_offset/6378137),
          x1 = longitude - (180/pi)*(x_offset/6378137)/cos(latitude),
@@ -266,7 +309,7 @@ ps <- list()
 #initialize list of polygons
 for (i in 1:nrow(coords)) {
   rect <- coords %>% 
-          slice(i)
+          dplyr::slice(i)
   p <- rect %>% 
             add_row(x0 = rect$x1, y0 = rect$y1) %>% 
             add_row(x0 = rect$x2, y0 = rect$y2) %>% 
@@ -300,19 +343,35 @@ gpclibPermitStatus()
 plot(agg)
 
 area <- areaPolygon(agg)
+area
 ```
 
 ### Find time at survey altitude
 ```{r}
 duration <- airdata %>% 
   filter(isTakingVideo == 1) %>% 
-  mutate(altitude.m. = altitude.feet./.0348) %>% 
   select(altitude.m., time.millisecond.) %>%
   mutate(alt_grp = ifelse(altitude.m. < (alt + alt_error) & 
                           altitude.m. > (alt - alt_error), 1, 0)) %>% 
   mutate(alt_grp = rleid(alt_grp)) %>% 
   filter(altitude.m. >= alt - alt_error) %>% 
   filter(altitude.m. <= alt + alt_error) %>%
+  group_by(alt_grp) %>% 
+  summarize(time = last(time.millisecond.) - first(time.millisecond.) +
+                  (last(airdata$time.millisecond.)/nrow(airdata))) %>% 
+  summarize(time = sum(time)/1000)
+
+# Version below is altered to work with non-v2 files...
+
+duration <- airdata %>% 
+  filter(isVideo == 1) %>% 
+  #mutate(altitude.m. = altitude.feet./3.218) %>% 
+  select(height_above_takeoff.feet., time.millisecond.) %>%
+  mutate(alt_grp = ifelse(height_above_takeoff.feet. <= 130 & 
+                          height_above_takeoff.feet. >= 134, 1, 0)) %>% 
+  mutate(alt_grp = rleid(alt_grp)) %>% 
+  filter(height_above_takeoff.feet. >= 131) %>% 
+  filter(height_above_takeoff.feet. <= 133) %>%
   group_by(alt_grp) %>% 
   summarize(time = last(time.millisecond.) - first(time.millisecond.) +
                   (last(airdata$time.millisecond.)/nrow(airdata))) %>% 
@@ -330,6 +389,7 @@ duration <- airdata %>%
 ```{r}
 effort_summary <- data.frame(read.csv("data/effort_summary.csv"))
 new_effort <- data.frame(dt, area, duration, alt, alt_error)
+View(new_effort)
 
 new_effort_summary <- effort_summary %>% 
   bind_rows(., new_effort) %>% 

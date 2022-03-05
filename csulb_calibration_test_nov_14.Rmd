@@ -267,22 +267,32 @@ AUV.dat <- mutate(AUV.dat, raw = if_else(is.na(yellow), full, yellow))
 ## Uncorrected estimates
 ```{r}
 AUV.dat %>% 
-  filter(depth < 3) %>% 
   ggplot(aes(x = SRT_alt, y = raw)) +
     geom_point() +
     geom_smooth() +
     geom_hline(yintercept = c(1.725, 2.4)) +
-    facet_wrap(vars(depth))
+    facet_grid(cols =  vars(depth))
 ggsave("plots/SRT_vs_raw_estimate.png")
 ```
-## Corrected errors
+## Error, corrected for depth of target
 ```{r}
 AUV.dat %>% 
-  filter(depth < 3) %>% 
   ggplot(aes(x = SRT_alt, y = error)) +
     geom_point() +
     geom_smooth() +
     geom_hline(yintercept = 1) +
     facet_grid(cols = vars(depth))
 ggsave("plots/SRT_vs_errors.png")
+```
+
+## Error, corrected for depth of target and using nominal test altitude (AGL + 0.77 m)
+```{r}
+AUV.dat %>% 
+  ggplot(aes(x = test_alt, y = AGL_error)) +
+    geom_point() +
+    geom_smooth() +
+    geom_hline(yintercept = 1) +
+    facet_grid(cols = vars(depth)) +
+    theme_bw()
+ggsave("plots/AGL_vs_error.png")
 ```
