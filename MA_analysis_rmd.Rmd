@@ -9,8 +9,8 @@ editor_options:
 
 #Setup
 ```{r, eval=FALSE}
-#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER"))
-#install.packages("sjstats")
+#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv"))
+#install.packages("mgcv")
 library(tidyverse)
 #library(plyr); library(dplyr)
 library(lme4) #modelling
@@ -45,6 +45,7 @@ library(simfit) #simulating models
 library(jtools)
 library(ggstance)
 library(AER)
+library(mgcv) #GAMs
 #webshot::install_phantomjs() 
 #citation("ptest")
 ```
@@ -253,7 +254,7 @@ tide_dat_2020 <- tide_dat_2020 %>%
 
 dat_2020$date_hour <- as.character(dat_2020$date_hour)
 tide_added_2020 <- left_join(dat_2020, tide_dat_2020, by = "date_hour")
-View(tide_added_2020)
+#View(tide_added_2020)
 ```
 
 ### Reading in channel buoy data (Station 46053) - 2020
@@ -265,7 +266,7 @@ channel_dat_2020_raw <- read.table("data_raw/2020_buoy_dat.txt", header = FALSE,
                                                  "ATMP","WTMP","DEWP","VIS",
                                                  "TIDE"))
 #str(channel_dat_2020_raw)
-View(channel_dat_2020_raw)
+#View(channel_dat_2020_raw)
 
 channel_dat_2020 <- channel_dat_2020_raw %>%
   mutate_if(is.character, as.numeric) %>% 
@@ -584,7 +585,7 @@ str(dat_2020)
                          #PRES = PRES_hPa)
 dat_2020$datetime.x <- as.character(dat_2020$datetime.x)  
 #dat_2020 <- select(dat_2020, -(17:19))
-#not sure why this was ever necessary
+#not sure why this^ was ever necessary
 
 daily_2yr_dat <- full_join(dat_2019, dat_2020)
 #View(daily_2yr_dat)
@@ -598,8 +599,9 @@ dat_2021$manual_unique <- as.numeric(dat_2021$manual_unique)
 daily_2yr_dat$manual_total <- as.numeric(daily_2yr_dat$manual_total)
 dat_2021$manual_total <- as.numeric(dat_2021$manual_total)
 dat_2021$water_temp_channel <- as.numeric(dat_2021$water_temp_channel)
+daily_2yr_dat$datetime.x <- as_datetime(daily_2yr_dat$datetime.x)
 daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
-View(daily_3yr_dat)
+#View(daily_3yr_dat)
 ```
 
 ## Tidying 3-year data
@@ -721,7 +723,7 @@ dat_no_19 <- daily_3yr_dat %>%
 ```{r}
 dat_no_19$date_hour <- as_datetime(dat_no_19$date_hour)
 dat_no_19 <- mutate(dat_no_19, year = year(date_hour))
-View(dat_no_19)
+#View(dat_no_19)
 
 dat_no_19 %>%
   group_by(year(date_hour)) %>% 
@@ -870,9 +872,18 @@ pairs(emmeans(year_nb1_mod, ~year))
 daily_3yr_dat %>% 
   group_by(year) %>% 
   summarize(mean = mean(total_unique, na.rm = TRUE))
-```
 
-* based on GLM with ONLY year, total unique sightings increased each year from 2019 to 2021 (p < 0.001)
+year_trans_nb1_mod <- glmmTMB(transect_total ~ year, family = nbinom1, data = daily_3yr_dat)
+
+summary(year_trans_nb1_mod)
+ytn1m_res <- simulateResiduals(year_trans_nb1_mod)
+plot(ytn1m_res)
+
+pairs(emmeans(year_trans_nb1_mod, ~year))
+```
+* based on GLM with ONLY year, total unique sightings increased each year from 2019 to 2021 (p < 0.0001)
+* based on GLM with ONLY year, transect sightings increased each year from 2019 to 2021 (p < 0.0005)
+
 
 ### Manual sightings only:
 ```{r}
@@ -909,24 +920,90 @@ summary(season2_lm)
 #no quadratic trend (not sure this is a meaningful test anyways)
 
 #adding day to the year model:
-daily_3yr_narm <- daily_3yr_dat %>% 
-  filter(!is.na(transect_total)) %>% 
-  filter(!is.na(transect_area_m2)) %>% 
+daily_3yr_narm <- daily_3yr_dat %>%
   filter(transect_area_m2 > 10) %>% 
-  mutate(transect_density = 1000000*transect_total/transect_area_m2)
-
-season_glm <- glmmTMB(transect_total ~ year*day, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+  mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
+  filter(!is.na(transect_total)) %>% 
+  filter(!is.na(transect_area_km2))
+  
+season_glm <- glmmTMB(transect_total ~ year*day + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 
 summary(season_glm)
 
 dredge(season_glm)
-#day*year interaction model is only good candidate 
+#day*year interaction model is best candidate - but why do I even care about day? 
 
 sm_res <- simulateResiduals(season_glm)
 plot(sm_res)
 #minor issue with quantiles. Don't think it is a problem based on what I've read about that test
 ```
-* Best model to explain transect sightings includes day, year, and their interaction.
+* Best model to explain transect sightings includes day, year, and their interaction. I just don't think that "day" isan important thing to model.
+
+### Alternative approach to comparing years (no "day", just looking at survey-related variables like time of day, area surveyed, etc.)
+```{r}
+daily_3yr_narm <- daily_3yr_narm %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour)))
+
+year_glm <- glmmTMB(transect_total ~ year*hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+
+summary(year_glm)
+
+yr_res <- simulateResiduals(year_glm)
+plot(yr_res)
+
+dredge(year_glm)
+
+year_glm_best <- glmmTMB(transect_total ~ year*hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+pairs(emmeans(year_glm_best, ~year))
+
+year_only_glm <- glmmTMB(transect_total ~ year, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+pairs(emmeans(year_only_glm, ~year))
+
+#compare to ANOVA:
+year_aov <- aov(transect_total ~ year, data = daily_3yr_narm)
+summary(year_aov)
+TukeyHSD(year_aov, which = "year")
+```
+* hour and year are important predictors - all 4 models with any weight include both - but best model by far is year*hour with no offset for area surveyed
+* hour-only model is actually slightly better than year-only model, which is  interesting
+* year/hour interaction improves fit
+* adding area surveyed increases AIC (area has very low variation, so it makes sense that adding it as a predictor doesn't add much info)
+* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year*hour glm, but it is significant in the year-only glm. This suggests that differences in survey time is driving increased sightings from 2019 to 2020!
+
+### Copying above approach but with GAM
+```{r}
+gam_dat <- daily_3yr_dat %>% 
+  filter(!is.na(transect_total)) %>% 
+  filter(!is.na(year)) %>% 
+  mutate(transect_total = as.numeric(transect_total)) %>% 
+  mutate(year = as.factor(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour)))
+
+year_gam <- mgcv::gam(transect_total ~ year + s(hour, by = year), data = gam_dat)
+
+summary(year_gam)
+mgcv::gam.check(year_gam)
+plot(year_gam, residuals = TRUE, pch = 1)
+
+year_lm <- lm(transect_total ~ year, data = gam_dat)
+anova(year_lm, year_gam)
+
+
+hour_gam <- mgcv::gam(transect_total ~ s(hour), data = gam_dat)
+summary(hour_gam)
+mgcv::gam.check(hour_gam)
+plot(hour_gam, residuals = TRUE, pch = 1)
+```
+
+### Year is categorical so it doesn't make sense to use GAM unless hour has a non-linear effect on count:
+```{r}
+ggplot(gam_dat, aes(x = hour, y = transect_total))+
+  geom_jitter() +
+  geom_smooth()
+```
+* no strong evidence that I should favor a GAM here
 
 ### Do manual counts vary across the field season?
 ```{r}
@@ -944,6 +1021,26 @@ dredge(season_glm_man)
 
 # Exploratory Visualizations
 * Older individual year visualizations are below 3yr visualizations
+
+
+## Time of day (using data for year GLM)
+```{r}
+ggplot(daily_3yr_narm, aes(x = hour, y = transect_total)) +
+  geom_jitter() +
+  geom_smooth(method = "lm")
+
+hour_lm <- lm(transect_total ~ hour, data = daily_3yr_narm)
+summary(hour_lm)
+#see 0.3 more sharks every hour (p < 0.0001)
+
+hour_aov <- aov(hour ~ year, data = daily_3yr_narm)
+summary(hour_aov)
+
+daily_3yr_narm %>% 
+  group_by(year) %>% 
+  summarize(mean_time = mean(hour))
+```
+
 
 ## 3yr abundance visualizations
 
