@@ -749,6 +749,12 @@ ggplot(dat_no_19, aes(x = manual_unique, y = transect_total)) +
   geom_smooth(method = "lm")
 #outliers are potentially a big problem
 
+ggplot(daily_3yr_dat, aes(x = transect_total)) +
+  geom_bar(stat = "count")
+
+ggplot(daily_3yr_dat, aes(x = manual_unique)) +
+  geom_bar(stat = "count")
+
 t_vs_m.lm <- lm(transect_total ~ manual_unique, data = dat_no_19)
 summary(t_vs_m.lm)
 #slope = 0.60 - one shark sighted in manual = 0.6 sharks sighted in transect
@@ -784,6 +790,46 @@ ggplot(dat_no_19, aes(x = transect_total-manual_unique)) +
 * negative number on histogram means more sharks seen in manual - to me this is good evidence that we should use manual count: it is simply seeing more sharks
 
 ```{r}
+mean(dat_no_19$transect_total/dat_no_19$transect_area_km2, na.rm = TRUE)
+mean(dat_no_19$manual_unique/dat_no_19$manual_area_km2, na.rm = TRUE)
+#transect actually has higher density
+
+method_dat <- dat_no_19 %>% 
+  filter(!is.na(transect_total)) %>% 
+  filter(!is.na(transect_area_km2)) %>% 
+  filter(!is.na(manual_unique)) %>% 
+  filter(!is.na(manual_area_km2)) %>%
+  mutate(manual = manual_unique/manual_area_km2) %>% 
+  mutate(transect = transect_total/transect_area_km2) %>% 
+  pivot_longer(c(manual, transect), names_to = "method",
+                                    values_to = "density")
+  
+ggplot(method_dat, aes(x = density)) +
+  geom_histogram(binwidth = 10) +
+  facet_grid(~method)
+
+method_glm_dat <- dat_no_19 %>% 
+  filter(!is.na(transect_total)) %>% 
+  filter(!is.na(transect_area_km2)) %>% 
+  filter(!is.na(manual_unique)) %>% 
+  filter(!is.na(manual_area_km2)) %>%
+  select(transect_area_km2, manual_area_km2, transect_total, manual_unique, date) %>%
+  rename("transect" = transect_total) %>% 
+  rename("manual" = manual_unique) %>% 
+  pivot_longer(c(transect, manual), names_to = "method",
+                                    values_to = "count") %>% 
+  pivot_longer(c(transect_area_km2, manual_area_km2), names_to = "area_method",
+                                    values_to = "area") %>% 
+  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0)
+
+method_glm <- glmmTMB(count ~ method + offset(log(area)), data = method_glm_dat)
+summary(method_glm)
+
+met_res <- simulateResiduals(method_glm)
+plot(met_res)
+```
+
+```{r}
 dat_no_19 %>% 
   filter(transect_total == 0) %>% 
   filter(manual_unique != 0) %>% 
@@ -804,7 +850,7 @@ dat_no_19 %>%
 dat_no_19 %>% 
   filter(manual_unique == 0) %>% 
   summarize(mean = mean(transect_total, na.rm = TRUE))
-#when no sharks are detected in transect, manual detects 0.539
+#when no sharks are detected in manual, transect detects 0.539
 ```
 *This is further support for using manual - but transect densities are going to have to be used anyways for comparing across all three years?
 
@@ -953,9 +999,17 @@ yr_res <- simulateResiduals(year_glm)
 plot(yr_res)
 
 dredge(year_glm)
+#year*hour w/out area is best:
 
 year_glm_best <- glmmTMB(transect_total ~ year*hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+
+summary(year_glm_best)
+
+yr_res <- simulateResiduals(year_glm_best)
+plot(yr_res)
+#no issues
 pairs(emmeans(year_glm_best, ~year))
+#not a good test
 
 year_only_glm <- glmmTMB(transect_total ~ year, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 pairs(emmeans(year_only_glm, ~year))
@@ -967,9 +1021,8 @@ TukeyHSD(year_aov, which = "year")
 ```
 * hour and year are important predictors - all 4 models with any weight include both - but best model by far is year*hour with no offset for area surveyed
 * hour-only model is actually slightly better than year-only model, which is  interesting
-* year/hour interaction improves fit
-* adding area surveyed increases AIC (area has very low variation, so it makes sense that adding it as a predictor doesn't add much info)
-* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year*hour glm, but it is significant in the year-only glm. This suggests that differences in survey time is driving increased sightings from 2019 to 2020!
+* adding area surveyed increases AIC (area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
+* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year*hour glm, but it is significant in the year-only glm. This suggests that differences in the time of day at which teh survey was conducted is driving increased sightings from 2019 to 2020!
 
 ### Copying above approach but with GAM
 ```{r}
@@ -981,15 +1034,16 @@ gam_dat <- daily_3yr_dat %>%
   filter(!is.na(date_hour)) %>% 
   mutate(hour = as.numeric(hour(date_hour)))
 
-year_gam <- mgcv::gam(transect_total ~ year + s(hour, by = year), data = gam_dat)
+year_gam <- mgcv::gam(transect_total ~ year + s(hour) + offset(transect_area_km2), data = gam_dat)
 
 summary(year_gam)
+# edf for "hour" = 1, so it's being modeled as linear.
+
 mgcv::gam.check(year_gam)
 plot(year_gam, residuals = TRUE, pch = 1)
 
 year_lm <- lm(transect_total ~ year, data = gam_dat)
 anova(year_lm, year_gam)
-
 
 hour_gam <- mgcv::gam(transect_total ~ s(hour), data = gam_dat)
 summary(hour_gam)
@@ -1040,7 +1094,6 @@ daily_3yr_narm %>%
   group_by(year) %>% 
   summarize(mean_time = mean(hour))
 ```
-
 
 ## 3yr abundance visualizations
 
@@ -1625,7 +1678,6 @@ summary(wtemp_quadratic)
 
 plot(dat_2020_full$mean_wtemp_previous_24, fitted(dat_2020_full$manual_total_density ~ dat_2020_full$mean_wtemp_previous_24 + dat_2020_full$wtemp_2))
 ```
-
 
 ## 2020 Tide Visualizations
 ```{r}
