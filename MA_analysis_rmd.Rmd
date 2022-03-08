@@ -807,6 +807,7 @@ method_dat <- dat_no_19 %>%
 ggplot(method_dat, aes(x = density)) +
   geom_histogram(binwidth = 10) +
   facet_grid(~method)
+#normal distribution obviously not going to work
 
 method_glm_dat <- dat_no_19 %>% 
   filter(!is.na(transect_total)) %>% 
@@ -820,13 +821,36 @@ method_glm_dat <- dat_no_19 %>%
                                     values_to = "count") %>% 
   pivot_longer(c(transect_area_km2, manual_area_km2), names_to = "area_method",
                                     values_to = "area") %>% 
-  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0)
+  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0) %>% 
+  mutate(year = as.factor(year(date))) %>% 
+  mutate(method = as.factor(method))
 
-method_glm <- glmmTMB(count ~ method + offset(log(area)), data = method_glm_dat)
-summary(method_glm)
+method_glm_pois <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = "poisson")
 
-met_res <- simulateResiduals(method_glm)
+met_res <- simulateResiduals(method_glm_pois)
 plot(met_res)
+#poisson no bueno (overdispersed)
+
+method_glm_nb2 <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = nbinom2)
+
+met_res <- simulateResiduals(method_glm_nb2)
+plot(met_res)
+
+testQuantiles(met_res)
+# nb2 better, but not great
+
+method_glm_nb1 <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = nbinom1)
+
+met_res <- simulateResiduals(method_glm_nb1)
+plot(met_res)
+#nb1 worse, going to try a ZI with nbinom2:
+
+method_glm_zi <- glmmTMB(count ~ method + offset(log(area)) + (1|year), ziformula = ~1, data = method_glm_dat, family = nbinom2, na.action = "na.fail")
+
+met_res <- simulateResiduals(method_glm_zi)
+plot(met_res)
+
+dredge(method_glm_zi)
 ```
 
 ```{r}
@@ -931,7 +955,7 @@ pairs(emmeans(year_trans_nb1_mod, ~year))
 * based on GLM with ONLY year, transect sightings increased each year from 2019 to 2021 (p < 0.0005)
 
 
-### Manual sightings only:
+### Manual sightings only
 ```{r}
 daily_3yr_dat %>% 
   ggplot(aes(x = year, y = manual_unique)) +
@@ -983,7 +1007,7 @@ sm_res <- simulateResiduals(season_glm)
 plot(sm_res)
 #minor issue with quantiles. Don't think it is a problem based on what I've read about that test
 ```
-* Best model to explain transect sightings includes day, year, and their interaction. I just don't think that "day" isan important thing to model.
+* Best model to explain transect sightings includes day, year, and their interaction. I just don't think that "day" is an important thing to model.
 
 ### Alternative approach to comparing years (no "day", just looking at survey-related variables like time of day, area surveyed, etc.)
 ```{r}
@@ -992,6 +1016,7 @@ daily_3yr_narm <- daily_3yr_narm %>%
   mutate(hour = as.numeric(hour(date_hour)))
 
 year_glm <- glmmTMB(transect_total ~ year*hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+#use log(area) because negative binomial models the log of the mean
 
 summary(year_glm)
 
@@ -999,32 +1024,63 @@ yr_res <- simulateResiduals(year_glm)
 plot(yr_res)
 
 dredge(year_glm)
-#year*hour w/out area is best:
+#year*hour w/out area is best, but I'm not sure that the interaction between year and hour is meaningful (no reason a priori to think that the effect of time of day would depend on year)...
+```
 
-year_glm_best <- glmmTMB(transect_total ~ year*hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+### Final modeling procedure
+```{r}
+year_glm <- glmmTMB(transect_total ~ year + hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+
+summary(year_glm)
+
+yr_res <- simulateResiduals(year_glm)
+plot(yr_res)
+##minor issue with quantiles in global model. Don't think it is a problem based on what I've read about that test
+
+dredge(year_glm)
+#best model to explain transect sightings includes year and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year and hour:
+
+year_glm_best <- glmmTMB(transect_total ~ year + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 
 summary(year_glm_best)
 
-yr_res <- simulateResiduals(year_glm_best)
-plot(yr_res)
-#no issues
-pairs(emmeans(year_glm_best, ~year))
-#not a good test
+#diagnose best model:
+yr_bst_res <- simulateResiduals(year_glm_best)
+plot(yr_bst_res)
+#passes DHARMa checks
+```
+* Best model is year + hour with no offset for area surveyed
+* hour-only model is actually slightly better than year-only model, which is  interesting
+* adding area surveyed increases AIC (transect area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
 
-year_only_glm <- glmmTMB(transect_total ~ year, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
-pairs(emmeans(year_only_glm, ~year))
+### Effects testing of final "year" GLM
+```{r}
+Anova(year_glm_best)
+#both year and hour have significant effects on sightings (which we already know from the model selection process)
 
-#compare to ANOVA:
+year_emms <- emmeans(year_glm_best, "year")
+pwpm(year_emms, type = "response")
+#I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
+
+#compare to ANOVA (sanity check):
 year_aov <- aov(transect_total ~ year, data = daily_3yr_narm)
 summary(year_aov)
 TukeyHSD(year_aov, which = "year")
-```
-* hour and year are important predictors - all 4 models with any weight include both - but best model by far is year*hour with no offset for area surveyed
-* hour-only model is actually slightly better than year-only model, which is  interesting
-* adding area surveyed increases AIC (area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
-* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year*hour glm, but it is significant in the year-only glm. This suggests that differences in the time of day at which teh survey was conducted is driving increased sightings from 2019 to 2020!
+#sightings differ significantly btwn 2021 and 2020/2019, but not between 2019 and 2020 (although p-value is lower than in the GLM because time of survey is not being taken into account in the anova)
 
-### Copying above approach but with GAM
+emmeans(year_glm_best, "hour", type = "response")
+#this is just saying that average time of survey is at 11:48 AM (and average sightings = 1.14 at that time?)
+
+allEffects(year_glm_best)
+plot(allEffects(year_glm_best))
+#nice little plot
+
+emmip(year_glm_best, hour ~ year)
+```
+* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year + hour glm. This suggests that differences in the time of day at which the survey was conducted is driving increased sightings from 2019 to 2020
+* Hopefully it's enough to say that  
+
+### Copying above approach but with GAM - probably won't use GAM for year analysis
 ```{r}
 gam_dat <- daily_3yr_dat %>% 
   filter(!is.na(transect_total)) %>% 
