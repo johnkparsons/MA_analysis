@@ -789,6 +789,7 @@ ggplot(dat_no_19, aes(x = transect_total-manual_unique)) +
 ```
 * negative number on histogram means more sharks seen in manual - to me this is good evidence that we should use manual count: it is simply seeing more sharks
 
+### Comparing methods
 ```{r}
 mean(dat_no_19$transect_total/dat_no_19$transect_area_km2, na.rm = TRUE)
 mean(dat_no_19$manual_unique/dat_no_19$manual_area_km2, na.rm = TRUE)
@@ -807,8 +808,36 @@ method_dat <- dat_no_19 %>%
 ggplot(method_dat, aes(x = density)) +
   geom_histogram(binwidth = 10) +
   facet_grid(~method)
-#normal distribution obviously not going to work
+#normal distribution obviously not going to work (for ANOVA or GLM)
+```
 
+```{r}
+dat_no_19 %>% 
+  filter(transect_total == 0) %>% 
+  filter(manual_unique != 0) %>% 
+  nrow()
+#46 days where transect saw nothing and manual saw something
+
+dat_no_19 %>% 
+  filter(transect_total == 0) %>% 
+  summarize(mean = mean(manual_unique, na.rm = TRUE))
+#when no sharks are detected in transect, manual detects 0.898
+
+dat_no_19 %>% 
+  filter(manual_unique == 0) %>%
+  filter(transect_total != 0) %>% 
+  nrow()
+#14 days where manual saw nothing and transect saw something
+
+dat_no_19 %>% 
+  filter(manual_unique == 0) %>% 
+  summarize(mean = mean(transect_total, na.rm = TRUE))
+#when no sharks are detected in manual, transect detects 0.539
+```
+*This is further support for using manual - but transect densities are going to have to be used anyways for comparing across all three years?
+
+### GLM approach to comparing methods (halting work on this while I try a paired-samples Wilcoxon, see next chunk. I don't think I'll be using GLM for this)
+```{r}
 method_glm_dat <- dat_no_19 %>% 
   filter(!is.na(transect_total)) %>% 
   filter(!is.na(transect_area_km2)) %>% 
@@ -853,30 +882,185 @@ plot(met_res)
 dredge(method_glm_zi)
 ```
 
+### Wilcoxon signed-rank test on counts
 ```{r}
-dat_no_19 %>% 
-  filter(transect_total == 0) %>% 
-  filter(manual_unique != 0) %>% 
-  nrow()
-#46 days where transect saw nothing and manual saw something
+paired_dat <- method_glm_dat %>% 
+  select(date, method, count) %>% 
+  pivot_wider(names_from = method, values_from = count) %>%
+  mutate(diff = manual - transect)
+nrow(paired_dat)
 
-dat_no_19 %>% 
-  filter(transect_total == 0) %>% 
-  summarize(mean = mean(manual_unique, na.rm = TRUE))
-#when no sharks are detected in transect, manual detects 0.898
+ggplot(paired_dat, aes(x = diff)) +
+    geom_bar()
+#paired differences actually look pretty normally distributed...
 
-dat_no_19 %>% 
-  filter(manual_unique == 0) %>%
-  filter(transect_total != 0) %>% 
-  nrow()
-#14 days where manual saw nothing and transect saw something
+shapiro.test(paired_dat$diff)
+#jk, not normal
+  
+transect_counts <- method_glm_dat %>% 
+  filter(method == "transect") %>% 
+  select(count)
+nrow(transect_counts)
 
-dat_no_19 %>% 
-  filter(manual_unique == 0) %>% 
-  summarize(mean = mean(transect_total, na.rm = TRUE))
-#when no sharks are detected in manual, transect detects 0.539
+manual_counts <- method_glm_dat %>% 
+  filter(method == "manual") %>% 
+  select(count)
+nrow(manual_counts)
+
+# explicitly testing the hypothesis that manual count is higher than transect count:
+method_test <- wilcox.test(manual_counts$count, transect_counts$count, paired = TRUE, alternative = "greater")
+method_test
+#more likely to see more sharks in the manual survey than in the transect survey (p<0.01)
 ```
-*This is further support for using manual - but transect densities are going to have to be used anyways for comparing across all three years?
+
+### Calculating effect size (basically just % of days where manual saw more, transect saw more, or they were the same)
+```{r}
+# number of days with no difference:
+paired_dat %>%
+  filter(diff == 0) %>% 
+  nrow()
+# 84 days
+
+84/nrow(paired_dat)
+# 38% of days
+
+paired_dat %>%
+  filter(transect == 0) %>% 
+  filter(manual == 0) %>% 
+  nrow()
+# 61 days where BOTH were zero
+
+61/84
+# 72.6% of "manual = transect" days were days where no sharks were seen!
+
+#number of days where manual saw more:
+paired_dat %>%
+  filter(diff > 0) %>% 
+  nrow()
+# 84 days (weird), 38%
+
+#number of days where transect saw more:
+paired_dat %>%
+  filter(diff < 0) %>% 
+  nrow()
+# 53 days
+
+53/nrow(paired_dat)
+# 24% of days
+
+mean(manual_counts$count)
+#average manual count is 2.28
+
+mean(transect_counts$count)
+# average transect count is 1.93
+```
+* Manual survey count was significantly more likely to be higher than transect survey count (p < 0.01), with manual count being higher than transect count for 38% of survey days, lower than transect count for 24% of survey days, and equal to transect count for 38% of survey days. Of the 84 days where manual and transect count were equal, 72.6% (61 days) were days where no sharks were seen.
+
+### Wilcoxon signed-rank test on density
+```{r}
+paired_dens_dat <- method_glm_dat %>%
+  mutate(density = count/area) %>% 
+  select(date, method, density) %>% 
+  pivot_wider(names_from = method, values_from = density) %>%
+  mutate(diff = manual - transect)
+
+shapiro.test(paired_dens_dat$diff)
+#not normal
+
+transect_dens <- method_glm_dat %>% 
+  filter(method == "transect") %>% 
+  mutate(density = count/area) %>% 
+  select(density)
+nrow(transect_dens)
+
+manual_dens <- method_glm_dat %>% 
+  filter(method == "manual") %>% 
+  mutate(density = count/area) %>% 
+  select(density)
+nrow(manual_dens)
+
+# do methods differ in density (2-sided, n = 221):
+method_dens_test <- wilcox.test(manual_dens$density, transect_dens$density, paired = TRUE)
+method_dens_test
+# NOT more likely to see a higher density of sharks (count per unit area surveyed) in one survey method vs the other
+
+mean(manual_dens$density)
+#average manual density is 11.27 sharks/km2
+
+mean(transect_dens$density)
+# average transect density is 11.25 sharks/km2
+```
+
+### Comparing rates (count per unit time)
+```{r}
+method_rate_dat <- dat_no_19 %>% 
+  filter(!is.na(transect_total)) %>% 
+  filter(!is.na(transect_duration_min)) %>% 
+  filter(!is.na(manual_unique)) %>% 
+  filter(!is.na(manual_duration_min)) %>%
+  select(transect_total, manual_unique, date, transect_duration_min, manual_duration_min) %>%
+  rename("transect" = transect_total) %>% 
+  rename("manual" = manual_unique) %>% 
+  pivot_longer(c(transect, manual), names_to = "method",
+                                    values_to = "count") %>% 
+  pivot_longer(c(transect_duration_min, manual_duration_min), names_to = "time_method",
+                                    values_to = "duration") %>% 
+  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0) %>% 
+  mutate(year = as.factor(year(date))) %>% 
+  mutate(method = as.factor(method))
+
+paired_rate_dat <- method_rate_dat %>%
+  mutate(rate = count/duration) %>% 
+  select(date, method, rate) %>% 
+  pivot_wider(names_from = method, values_from = rate) %>%
+  mutate(diff = manual - transect)
+
+shapiro.test(paired_rate_dat$diff)
+#not normal
+
+transect_rate <- method_rate_dat %>% 
+  filter(method == "transect") %>% 
+  mutate(rate = count/duration) %>% 
+  select(rate)
+nrow(transect_rate)
+
+manual_rate <- method_rate_dat %>% 
+  filter(method == "manual") %>% 
+  mutate(rate = count/duration) %>% 
+  select(rate)
+nrow(manual_rate)
+
+# do methods differ in rate (2-sided, n = 221):
+method_rate_test <- wilcox.test(manual_rate$rate, transect_rate$rate, paired = TRUE)
+method_rate_test
+# Not more likely for manual or transect to have a higher rate
+
+mean(manual_rate$rate)
+#average manual rate is 0.205 sharks/min
+View(manual_counts)
+mean(transect_rate$rate)
+# average transect rate is 0.185 sharks/km2
+```
+
+### Visualizing manual vs transect
+```{r}
+manual_counts <- mutate(manual_counts, value = count*10, method = "manual", metric = "count")
+transect_counts <- mutate(transect_counts, value = count*10, method = "transect", metric = "count")
+manual_dens <- mutate(manual_dens, value = density, method = "manual", metric = "density")
+transect_dens <- mutate(transect_dens, value = density, method = "transect", metric = "density")
+manual_rate <- mutate(manual_rate, value = rate*100, method = "manual", metric = "rate")
+transect_rate <- mutate(transect_rate, value = rate*100, method = "transect", metric = "rate")
+
+comp_vis_dat <- bind_rows(manual_counts, transect_counts, manual_dens, transect_dens, manual_rate, transect_rate)
+
+View(comp_vis_dat)
+
+ggplot(comp_vis_dat, aes(x = metric, y = value)) +
+  geom_boxplot(aes(color = method)) +
+  geom_point(aes(x = metric, y = 139), shape = 8) #in progress...
+# count is scaled up by a factor of 10 and rate is scaled up by a factor of 100. Only sig diff is count.
+```
+
 
 ## Patterns of Abundance
 
@@ -1001,15 +1185,15 @@ season_glm <- glmmTMB(transect_total ~ year*day + offset(log(transect_area_km2))
 summary(season_glm)
 
 dredge(season_glm)
-#day*year interaction model is best candidate - but why do I even care about day? 
+#day*year interaction model is best candidate - but I don't have any replication for many days due to non-overlapping survey window
 
 sm_res <- simulateResiduals(season_glm)
 plot(sm_res)
 #minor issue with quantiles. Don't think it is a problem based on what I've read about that test
 ```
-* Best model to explain transect sightings includes day, year, and their interaction. I just don't think that "day" is an important thing to model.
+* Best model to explain transect sightings includes day, year, and their interaction.
 
-### Alternative approach to comparing years (no "day", just looking at survey-related variables like time of day, area surveyed, etc.)
+### Alternative approach to comparing years ("day" plus looking at survey-related variables like time of day, area surveyed, etc.)
 ```{r}
 daily_3yr_narm <- daily_3yr_narm %>% 
   filter(!is.na(date_hour)) %>% 
@@ -1027,20 +1211,20 @@ dredge(year_glm)
 #year*hour w/out area is best, but I'm not sure that the interaction between year and hour is meaningful (no reason a priori to think that the effect of time of day would depend on year)...
 ```
 
-### Final modeling procedure
+### Final modeling procedure - Full survey window
 ```{r}
-year_glm <- glmmTMB(transect_total ~ year + hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+year_glm <- glmmTMB(transect_total ~ year + day + hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 
 summary(year_glm)
 
 yr_res <- simulateResiduals(year_glm)
 plot(yr_res)
-##minor issue with quantiles in global model. Don't think it is a problem based on what I've read about that test
+##minor issue with quantiles in global model (not when day is included). Don't think it is a problem based on what I've read about that test
 
 dredge(year_glm)
-#best model to explain transect sightings includes year and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year and hour:
+#best model to explain transect sightings includes year, day, and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year, day, and hour:
 
-year_glm_best <- glmmTMB(transect_total ~ year + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+year_glm_best <- glmmTMB(transect_total ~ year + day + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 
 summary(year_glm_best)
 
@@ -1049,14 +1233,13 @@ yr_bst_res <- simulateResiduals(year_glm_best)
 plot(yr_bst_res)
 #passes DHARMa checks
 ```
-* Best model is year + hour with no offset for area surveyed
-* hour-only model is actually slightly better than year-only model, which is  interesting
+* Best model is year + day + hour with no offset for area surveyed
 * adding area surveyed increases AIC (transect area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
 
-### Effects testing of final "year" GLM
+### Effects testing of final "year" GLM - Full survey window
 ```{r}
 Anova(year_glm_best)
-#both year and hour have significant effects on sightings (which we already know from the model selection process)
+# year, day, and hour have significant effects on sightings (which we already know from the model selection process)
 
 year_emms <- emmeans(year_glm_best, "year")
 pwpm(year_emms, type = "response")
@@ -1069,16 +1252,53 @@ TukeyHSD(year_aov, which = "year")
 #sightings differ significantly btwn 2021 and 2020/2019, but not between 2019 and 2020 (although p-value is lower than in the GLM because time of survey is not being taken into account in the anova)
 
 emmeans(year_glm_best, "hour", type = "response")
-#this is just saying that average time of survey is at 11:48 AM (and average sightings = 1.14 at that time?)
+#this is just saying that average time of survey is at 11:48 AM (and average sightings = 1.12 at that time based on the model?)
+
+emmeans(year_glm_best, "day", type = "response")
+#this is just saying that average day of survey is August 26th (ish) (and average sightings = 1.12 at that time based on the model?)
 
 allEffects(year_glm_best)
 plot(allEffects(year_glm_best))
 #nice little plot
 
 emmip(year_glm_best, hour ~ year)
+emmip(year_glm_best, day ~ year)
+
+daily_3yr_narm %>% 
+  filter(year == 2019) %>% 
+  summarize(mean = mean(transect_total))
+# 2019 mean = 0.54321
+
+daily_3yr_narm %>% 
+  filter(year == 2020) %>% 
+  summarize(mean = mean(transect_total))
+# 2020 mean = 1.17143
+
+daily_3yr_narm %>% 
+  filter(year == 2021) %>% 
+  summarize(mean = mean(transect_total))
+# 2021 mean = 2.82171
 ```
-* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year + hour glm. This suggests that differences in the time of day at which the survey was conducted is driving increased sightings from 2019 to 2020
-* Hopefully it's enough to say that  
+* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year + day + hour glm. This suggests that other factors than the ones examined here are driving increased sightings from 2019 to 2020
+
+### Comparing survey windows
+```{r}
+nrow(dat_2019)
+first(dat_2019$date)
+last(dat_2019$date)
+#107 survey days in 2019 from May 30 to November 22
+
+nrow(dat_2020)
+first(dat_2020$date)
+last(dat_2020$date)
+#135 survey days in 2020 from May 20 to December 11
+
+nrow(dat_2021)
+first(dat_2021$date)
+last(dat_2021$date)
+#142 survey days in 2021 from April 20 to December 18
+```
+* I definitely *could* do analyses with only the overlapping window but since day is included I think it makes more sense to keep all of the data that I have
 
 ### Copying above approach but with GAM - probably won't use GAM for year analysis
 ```{r}
@@ -1090,7 +1310,7 @@ gam_dat <- daily_3yr_dat %>%
   filter(!is.na(date_hour)) %>% 
   mutate(hour = as.numeric(hour(date_hour)))
 
-year_gam <- mgcv::gam(transect_total ~ year + s(hour) + offset(transect_area_km2), data = gam_dat)
+year_gam <- mgcv::gam(transect_total ~ year + s(hour) + s(day) + offset(transect_area_km2), data = gam_dat)
 
 summary(year_gam)
 # edf for "hour" = 1, so it's being modeled as linear.
@@ -1107,9 +1327,13 @@ mgcv::gam.check(hour_gam)
 plot(hour_gam, residuals = TRUE, pch = 1)
 ```
 
-### Year is categorical so it doesn't make sense to use GAM unless hour has a non-linear effect on count:
+### Year is categorical so it doesn't make sense to use GAM unless hour or day has a non-linear effect on count:
 ```{r}
 ggplot(gam_dat, aes(x = hour, y = transect_total))+
+  geom_jitter() +
+  geom_smooth()
+
+ggplot(gam_dat, aes(x = day, y = transect_total))+
   geom_jitter() +
   geom_smooth()
 ```
