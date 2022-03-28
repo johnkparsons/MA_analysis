@@ -1042,7 +1042,7 @@ mean(transect_rate$rate)
 # average transect rate is 0.185 sharks/km2
 ```
 
-### Visualizing manual vs transect
+### Visualizing manual vs transect metrics - data prep
 ```{r}
 manual_counts <- mutate(manual_counts, value = count*10, method = "manual", metric = "count")
 transect_counts <- mutate(transect_counts, value = count*10, method = "transect", metric = "count")
@@ -1054,11 +1054,57 @@ transect_rate <- mutate(transect_rate, value = rate*100, method = "transect", me
 comp_vis_dat <- bind_rows(manual_counts, transect_counts, manual_dens, transect_dens, manual_rate, transect_rate)
 
 View(comp_vis_dat)
+```
 
-ggplot(comp_vis_dat, aes(x = metric, y = value)) +
+### Manual vs Transect 3 metric comparison plot:
+```{r}
+method_comp_plot_final <- ggplot(comp_vis_dat, aes(x = metric, y = value)) +
   geom_boxplot(aes(color = method)) +
-  geom_point(aes(x = metric, y = 139), shape = 8) #in progress...
+  theme_cowplot() +
+  scale_color_brewer(palette = "Dark2") +
+  geom_point(aes(y = 139, shape = metric)) +
+  scale_shape_manual(values = c(8, NA, NA)) + #significance asterisk
+  guides(shape = "none")
+
+method_comp_plot_final
+ggsave("plots/method_comp_plot_final.png")
 # count is scaled up by a factor of 10 and rate is scaled up by a factor of 100. Only sig diff is count.
+```
+
+```{r}
+#also will try to plot rate as minutes per shark to avoid the 100x:
+
+manual_time <- mutate(manual_rate, value = 10/rate, method = "manual", metric = "time")
+transect_time <- mutate(transect_rate, value = 10/rate, method = "transect", metric = "time")
+
+comp_vis_time <- bind_rows(manual_counts, transect_counts, manual_dens, transect_dens, manual_time, transect_time)
+
+#count is 10x and "time" is minutes per shark x10 (which is not intuitive at all - I;m definitely not going to use this
+ggplot(comp_vis_time, aes(x = metric, y = value)) +
+  geom_boxplot(aes(color = method))
+
+# now let's try standardizing by the manual metric:
+manual_counts_stan <- mutate(manual_counts, value = count, method = "manual", metric = "count")
+transect_counts_stan <- mutate(transect_counts, value = count, method = "transect", metric = "count")
+
+counts_stan <- bind_cols(manual_counts_stan, transect_counts_stan)
+counts_stan <- mutate(counts_stan, manual = 1, transect = value...8/value...4)
+counts_stan <- pivot_longer(counts_stan, 9:10)
+
+manual_dens_stan <- mutate(manual_dens, value = density, method = "manual", metric = "density")
+transect_dens_stan <- mutate(transect_dens, value = density, method = "transect", metric = "density")
+
+density_stan <- bind_cols(manual_dens_stan, transect_dens_stan)
+density_stan <- mutate(density_stan, manual = 1, transect = value...8/value...4)
+density_stan <- pivot_longer(density_stan, 9:10)
+
+count_and_dens_stan_dat <- bind_rows(counts_stan, density_stan)
+View(count_and_dens_stan_dat)
+
+ggplot(count_and_dens_stan_dat, aes(x = metric...3, y = value...10)) +
+  geom_boxplot(aes(color = name))
+#stupid idea lol
+
 ```
 
 
