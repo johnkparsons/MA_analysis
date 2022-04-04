@@ -153,7 +153,7 @@ dat_2019 <- flights_plus_channel_dat_2019 %>%
 ### Reading in SB harbor data (Station 9411340) - 2019
 ```{r}
 harbor_dat_2019 <- read.csv("data_raw/2019_harbor_dat.csv")
-View(harbor_dat_2019)
+#View(harbor_dat_2019)
 
 harbor_dat_2019 <- harbor_dat_2019 %>% 
               rename(time = 2, harbor_windspd = 3,
@@ -365,6 +365,7 @@ dat_2021 <- dat_2021 %>%
 ```
 
 ### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2021
+Probably want to delete the parts dealing with "small" and "large" since that distinction is meaningless
 ```{r}
 dat_2021 <- dat_2021 %>%
   mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
@@ -547,7 +548,7 @@ dat_2021 <- left_join(dat_2021, harbor_dat_2021, by = "date_hour")
 ### Size Data Tidying (1 row = 1 individual) - 2021
 ```{r}
 size_dat_2021 <- read.csv("data_raw/size_dat_2021.csv")
-View(size_dat_2021)
+#View(size_dat_2021)
 
 #size_dat_2021 <- size_dat_2021 %>% dplyr::slice(3:nrow(size_dat_2021))
 size_dat_2021$date <- as.Date(size_dat_2021$date, "%m/%d/%Y")
@@ -621,6 +622,9 @@ daily_3yr_dat <- daily_3yr_dat %>% mutate(date = if_else(year(date) < 2000, date
 
 daily_3yr_dat <- mutate(daily_3yr_dat, year = as_factor(year(date)))
 
+daily_3yr_dat <- mutate(daily_3yr_dat, day = yday(date))
+daily_3yr_dat <- mutate(daily_3yr_dat, day2 = (yday(date))^2)
+
 write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 ```
 
@@ -662,7 +666,7 @@ size_dat_unique <- size_dat_3yr %>%
 
 nrow(size_dat_unique)
 ```
-866 sightings (data as of 12/28/21)
+919 sightings
 
 ```{r}
 size_dat_unique$date <- as_date(size_dat_unique$date)
@@ -717,6 +721,8 @@ daily_3yr_dat <- daily_3yr_dat %>%
 ```{r}
 dat_no_19 <- daily_3yr_dat %>% 
   filter(year(date_hour) != 2019)
+dat_no_19$date_hour <- as_datetime(dat_no_19$date_hour)
+dat_no_19 <- mutate(dat_no_19, year = year(date_hour))
 ```
 
 ===============================================================================
@@ -725,10 +731,6 @@ dat_no_19 <- daily_3yr_dat %>%
 
 ## Investigating different metrics - raw count (each method and "unique") and density
 ```{r}
-dat_no_19$date_hour <- as_datetime(dat_no_19$date_hour)
-dat_no_19 <- mutate(dat_no_19, year = year(date_hour))
-#View(dat_no_19)
-
 dat_no_19 %>%
   group_by(year(date_hour)) %>% 
   summarize("Unique count" = mean(total_unique, na.rm = TRUE),
@@ -791,7 +793,7 @@ mean(dat_no_19$manual_unique, na.rm = TRUE)
 ggplot(dat_no_19, aes(x = transect_total-manual_unique)) +
   geom_histogram(stat = "count")
 ```
-* negative number on histogram means more sharks seen in manual - to me this is good evidence that we should use manual count: it is simply seeing more sharks
+* negative x-axis value means more sharks seen in manual - to me this is good evidence that we should use manual count: it is simply seeing more sharks
 
 ### Comparing methods
 ```{r}
@@ -884,6 +886,7 @@ met_res <- simulateResiduals(method_glm_zi)
 plot(met_res)
 
 dredge(method_glm_zi)
+#best model doesn't even include method
 ```
 
 ### Wilcoxon signed-rank test on counts
@@ -1111,9 +1114,7 @@ View(count_and_dens_stan_dat)
 ggplot(count_and_dens_stan_dat, aes(x = metric...3, y = value...10)) +
   geom_boxplot(aes(color = name))
 #stupid idea lol
-
 ```
-
 
 ## Patterns of Abundance
 
@@ -1215,9 +1216,6 @@ daily_3yr_dat %>%
 
 ### Do detections vary across the field season?
 ```{r}
-daily_3yr_dat <- mutate(daily_3yr_dat, day = yday(date))
-daily_3yr_dat <- mutate(daily_3yr_dat, day2 = (yday(date))^2)
-
 season_lm <- lm((1000000*transect_total/transect_area_m2) ~ day, data = daily_3yr_dat)
 summary(season_lm)
 #no apparent linear trend
@@ -1225,13 +1223,22 @@ summary(season_lm)
 season2_lm <- lm((1000000*transect_total/transect_area_m2) ~ day + day2, data = daily_3yr_dat)
 summary(season2_lm)
 #no quadratic trend (not sure this is a meaningful test anyways)
+```
 
-#adding day to the year model:
+### Adding "day" to the year model
+```{r}
 daily_3yr_narm <- daily_3yr_dat %>%
   filter(transect_area_m2 > 10) %>% 
   mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
   filter(!is.na(transect_total)) %>% 
-  filter(!is.na(transect_area_km2))
+  filter(!is.na(transect_area_km2)) %>% 
+  rowwise() %>% 
+  mutate(total_area_km2 = sum(transect_area_km2, manual_area_km2, na.rm = TRUE)) %>% 
+  mutate(total_dens = total_unique/total_area_km2) %>% 
+  filter(!is.na(total_unique)) %>% 
+  filter(!is.na(total_area_km2)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour)))
   
 season_glm <- glmmTMB(transect_total ~ year*day + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 
@@ -1248,10 +1255,6 @@ plot(sm_res)
 
 ### Alternative approach to comparing years ("day" plus looking at survey-related variables like time of day, area surveyed, etc.)
 ```{r}
-daily_3yr_narm <- daily_3yr_narm %>% 
-  filter(!is.na(date_hour)) %>% 
-  mutate(hour = as.numeric(hour(date_hour)))
-
 year_glm <- glmmTMB(transect_total ~ year*hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 #use log(area) because negative binomial models the log of the mean
 
@@ -1264,7 +1267,7 @@ dredge(year_glm)
 #year*hour w/out area is best, but I'm not sure that the interaction between year and hour is meaningful (no reason a priori to think that the effect of time of day would depend on year)...
 ```
 
-### Final modeling procedure - Full survey window
+### Final modeling procedure - full survey window, transect sightings only
 ```{r}
 year_glm <- glmmTMB(transect_total ~ year + day + hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
 
@@ -1277,7 +1280,7 @@ plot(yr_res)
 dredge(year_glm)
 #best model to explain transect sightings includes year, day, and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year, day, and hour:
 
-year_glm_best <- glmmTMB(transect_total ~ year + day + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+year_glm_best <- glmmTMB(transect_total ~ year + day + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail") #log link
 
 summary(year_glm_best)
 
@@ -1289,13 +1292,13 @@ plot(yr_bst_res)
 * Best model is year + day + hour with no offset for area surveyed
 * adding area surveyed increases AIC (transect area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
 
-### Effects testing of final "year" GLM - Full survey window
+### Effects testing of final "year" GLM - full survey window, transect sightings only
 ```{r}
 Anova(year_glm_best)
 # year, day, and hour have significant effects on sightings (which we already know from the model selection process)
 
 year_emms <- emmeans(year_glm_best, "year")
-pwpm(year_emms, type = "response")
+pwpm(year_emms, type = "response") #on the response, not the log, scale
 #I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
 
 #compare to ANOVA (sanity check):
@@ -1332,8 +1335,20 @@ daily_3yr_narm %>%
   summarize(mean = mean(transect_total))
 # 2021 mean = 2.82171
 ```
-* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year + day + hour glm. This suggests that other factors than the ones examined here are driving increased sightings from 2019 to 2020
+* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year + day + hour glm. This suggests that other factors are driving increased sightings from 2019 to 2020. We know that time of day and day of year explain sightings, so we should test if these factors vary significantly between years - if they do, they may be driving the difference in shark sightings between 2019-2020
 
+### Are time of day and day of year different between years?
+```{r}
+time_btwn_yrs_aov <- aov(hour ~ year, data = daily_3yr_narm)
+summary(time_btwn_yrs_aov)
+TukeyHSD(time_btwn_yrs_aov)
+#2019 time of day significantly earlier (by about 2.5 hrs)
+
+day_btwn_yrs_aov <- aov(day ~ year, data = daily_3yr_narm)
+summary(day_btwn_yrs_aov)
+TukeyHSD(day_btwn_yrs_aov)
+#day of year not significantly different between 2019 and 2020, but 2021 was significantly earlier than 2019 (24 days) and 2020 (41 days)
+```
 
 ### Nice timeseries plot where each year is overlaid
 ```{r}
@@ -1351,8 +1366,120 @@ daily_3yr_dat %>%
   theme_cowplot() +
   theme(panel.background = element_rect(fill = "white", colour = NA),
       plot.background = element_rect(fill = "white", colour = NA))
-ggsave("plots/abund_years_overlaid.png", width = 7, height = 4)
 
+ggsave("plots/abund_years_overlaid.png", width = 7, height = 4)
+```
+
+### Final modeling procedure - full survey window, all sightings (work on this started 4/3/22)
+```{r}
+year_total_glm <- glmmTMB(total_unique ~ year + day + hour + offset(log(total_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+#log(area) is used because nbinom1 uses a log link, so total_unique is on the log scale
+
+summary(year_total_glm)
+
+yr_res <- simulateResiduals(year_total_glm)
+plot(yr_res)
+##minor issue with quantiles in global model. Don't think it is a problem based on what I've read about that test
+
+dredge(year_total_glm)
+
+#like with transect-only, best model to explain total sightings includes year, day, and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year, day, and hour:
+
+year_total_glm_best <- glmmTMB(total_unique ~ year + day + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
+
+summary(year_total_glm_best)
+
+#diagnose best model:
+yr_tot_bst_res <- simulateResiduals(year_total_glm_best)
+plot(yr_tot_bst_res)
+#passes DHARMa checks
+```
+
+### Effects testing of full model (4/3)
+```{r}
+Anova(year_total_glm)
+# year, day, and hour have significant effects on density (which we already know from the model selection process)
+
+year_tot_emms <- emmeans(year_total_glm, "year")
+pwpm(year_tot_emms, type = "response") #on the response, not the log, scale
+#I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
+#like transect count, 2019-2020 contrast is not significant for total density
+
+#compare to ANOVA (sanity check):
+year_total_aov <- aov(total_unique ~ year, data = daily_3yr_narm)
+summary(year_total_aov)
+TukeyHSD(year_total_aov, which = "year")
+#sightings differ significantly between all years
+
+emmeans(year_total_glm, "hour", type = "response")
+#this is just saying that average time of survey is at 11:48 AM (and average density = 2.02 at that time based on the model?)
+
+emmeans(year_total_glm, "day", type = "response")
+#this is just saying that average day of survey is August 26th (ish) (and average density = 2.02 at that time based on the model?)
+
+allEffects(year_total_glm)
+plot(allEffects(year_total_glm))
+
+emmip(year_total_glm, hour ~ year)
+emmip(year_total_glm, day ~ year)
+#idk what these are doing, they look exactly the same
+
+daily_3yr_narm %>% 
+  group_by(year) %>% 
+  summarize(mean = mean(total_dens))
+# 2019 mean = 3.53
+# 2020 mean = 5.12
+# 2021 mean = 12.8
+
+daily_3yr_narm %>% 
+  filter(year == 2020) %>% 
+  summarize(mean = mean(total_dens))
+# no idea why this stopped working (also stopped working in transect-only chunk above)
+```
+* Best model is year + day + hour with no offset for area surveyed
+* adding area surveyed increases AIC
+
+### Effects testing of final "year" GLM - full survey window, all sightings
+```{r}
+Anova(year_total_glm_best)
+# year, day, and hour have significant effects on sightings (which we already know from the model selection process)
+
+year_total_emms <- emmeans(year_total_glm_best, "year")
+pwpm(year_total_emms, type = "response") #on the response, not the log, scale
+#I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
+#UNLIKE transect only, 2019-2020 contrast is highly significant
+
+#compare to ANOVA (sanity check):
+year_total_aov <- aov(total_unique ~ year, data = daily_3yr_narm)
+summary(year_total_aov)
+TukeyHSD(year_total_aov, which = "year")
+#sightings differ significantly between all years
+
+emmeans(year_total_glm_best, "hour", type = "response")
+#this is just saying that average time of survey is at 11:48 AM (and average sightings = 1.66 at that time based on the model?)
+
+emmeans(year_total_glm_best, "day", type = "response")
+#this is just saying that average day of survey is August 26th (ish) (and average sightings = 1.66 at that time based on the model?)
+
+allEffects(year_total_glm_best)
+plot(allEffects(year_total_glm_best))
+#nice little plot, biggest difference from transect-only is that 2020 is now significantly higher than 2021
+
+emmip(year_total_glm_best, hour ~ year)
+emmip(year_total_glm_best, day ~ year)
+#idk what these are doing, they look exactly the same
+
+daily_3yr_narm %>% 
+  group_by(year) %>% 
+  summarize(mean = mean(total_unique))
+# 2019 mean = 0.543
+# 2020 mean = 2.4
+# 2021 mean = 4.32
+
+daily_3yr_narm %>% 
+  filter(year == 2020) %>% 
+  summarize(mean = mean(total_unique))
+# no idea why this stopped working (also stopped working in transect-only chunk above)
 ```
 
 ### Comparing survey windows
@@ -1690,6 +1817,15 @@ size_dat_2021 %>%
   mutate(adj_diff = length_adj_m - length_raw_m) %>% 
   summarize(mean_adj_diff = mean(adj_diff))
 #average deep adjustment was increase of 0.37 meters
+```
+
+## Modelling effects of environmental and detection-related variables
+```{r}
+
+
+
+
+
 ```
 
 ===============================================================================
