@@ -12,6 +12,7 @@ editor_options:
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv"))
 #install.packages("mgcv")
 library(tidyverse)
+slice <- dplyr::slice
 #library(plyr); library(dplyr)
 library(lme4) #modelling
 library(glmmTMB) #modelling
@@ -59,38 +60,37 @@ library(mgcv) #GAMs
 ### Flight-Level Data Tidying (1 row = 1 day) - 2019
 ```{r}
 dat_2019 <- read.csv("data_raw/2019_flight_data.csv")
-#View(dat_2019)
+#view(dat_2019)
+
+dat_2019$date[104:107] <- as.character(c(
+  "10/25/2019", "10/28/2019", "10/30/2019", "11/4/2019"))
+
+dat_2019 <- dat_2019 %>% 
+  dplyr::select(!c(3:9,13,14,16:17,20,21,23:25,28,29)) %>% 
+  mutate(total_unique = transect_total) %>% 
+  mutate(transect_datetime = as_datetime(transect_datetime))
 
 dat_2019[dat_2019 == ""] <- NA
-dat_2019 <- mutate(dat_2019, total_unique = transect_total)
-dat_2019$date[93:96] <- as.character(c(
-  "10/25/2019", "10/28/2019", "10/30/2019", "11/4/2019"))
-dat_2019$date <- as.Date(dat_2019$date, "%m/%d/%Y")
-dat_2019$small<- as.numeric(as.character(dat_2019$small))
-dat_2019$large<- as.numeric(as.character(dat_2019$large))
-dat_2019$transect_total <- as.numeric(dat_2019$transect_total)
-dat_2019$transect_small <- as.numeric(dat_2019$transect_small)
-dat_2019$transect_large <- as.numeric(dat_2019$transect_large)
+
+#dat_2019$date <- as.Date(dat_2019$date, "%m/%d/%Y")
 
 dat_2019 <- dat_2019 %>%
-  mutate(datetime = ifelse(detection == "N" & is.na(transect_datetime), as.character(date), transect_datetime)) %>% 
-  mutate(date_hour = round_date(as_datetime(transect_datetime), "hour"))
+  mutate(datetime = as_datetime(transect_datetime)) %>%
+  mutate(date_hour = round_date(as_datetime(datetime), "hour"))
 ```
 
 ### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2019
 ```{r}
 dat_2019 <- dat_2019 %>%
   mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
-  mutate(transect_duration_min = transect_duration_sec/60)
-
-dat_2019 <- dat_2019 %>% 
-  mutate(transect_effort = transect_area_km2*transect_duration_min) %>% 
-  mutate(transect_total_density = if_else(transect_total == 0, 0, 
-                                          transect_total/transect_effort)) %>% 
-  mutate(transect_small_density = if_else(transect_small == 0, 0,               
-                                          transect_small/transect_effort)) %>%
-  mutate(transect_large_density = if_else(transect_large == 0,0,
-                                          transect_large/transect_effort))
+  mutate(transect_duration_min = transect_duration_sec/60) %>% 
+  mutate(transect_density_effort = 
+         transect_total/(transect_area_km2*transect_duration_min)) %>% 
+  mutate(transect_density = transect_total/transect_area_km2) #%>% 
+  #mutate(transect_small_density = if_else(transect_small == 0, 0,               #transect_small/transect_effort)) %>%
+  #mutate(transect_large_density = if_else(transect_large == 0,0,
+                                          #transect_large/transect_effort))
+#view(dat_2019)
 ```
 
 ### Reading in tide data (Station 9411340) - 2019
@@ -105,10 +105,10 @@ tide_dat_2019 <- tide_dat_2019 %>%
   mutate(time = substring(time, 12)) %>% 
   mutate(date = as_datetime(Date)) %>% 
   unite(date_hour, c(date, time), sep = " ") %>% 
+  mutate(date_hour = as_datetime(date_hour)) %>% 
   select(-c(1,3,4)) %>%
   rename(tide = 2)
 
-dat_2019$date_hour <- as.character(dat_2019$date_hour)
 dat_2019 <- left_join(dat_2019, tide_dat_2019, by = "date_hour")
 #View(dat_2019)
 ```
@@ -122,7 +122,7 @@ channel_dat_2019_raw <- read.table("data_raw/2019_buoy_dat.txt", header = FALSE,
                                                  "ATMP","WTMP","DEWP","VIS",
                                                  "TIDE"))
 #str(channel_dat_2019_raw)
-#View(channel_dat_2019_raw)
+#View(channel_dat_2019_raw)e
 
 channel_dat_2019 <- channel_dat_2019_raw %>%
                       mutate_if(is.character, as.numeric) %>% 
@@ -175,21 +175,25 @@ dat_2019 <- left_join(dat_2019, harbor_dat_2019, by = "date_hour")
 ```{r}
 size_dat_2019 <- read.csv("data_raw/size_dat_2019.csv")
 #View(size_dat_2019)
+
 size_dat_2019 <- size_dat_2019 %>% 
   select(1:10) %>% 
   dplyr::slice(-(48:49))
-size_dat_2019$date <- as.Date(size_dat_2019$date, "%m/%d/%Y")
-size_dat_2019$length <- as.numeric(size_dat_2019$length)
+
+#size_dat_2019$date <- as.Date(size_dat_2019$date, "%m/%d/%Y")
+#size_dat_2019$length <- as.numeric(size_dat_2019$length)
+
 size_dat_2019 <- size_dat_2019 %>% 
-                  mutate(length_m = length/3.2808)
-size_dat_2019 <- size_dat_2019 %>% 
-                  mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+                  mutate(length_raw_m = length/3.2808) %>% 
+                  rename(length_raw = length) #%>% 
+                  #mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+#will do size classification on the 3yr dataset
 
 size_dat_2019 %>%
-  filter(size_class == "Adult") %>% 
+  filter(length_raw_m >= 3) %>% 
   nrow()
 ```
-*no adults!!
+*no adults! (unadjusted lengths)
 
 ## 2020 Data Tidying
 
@@ -198,12 +202,9 @@ size_dat_2019 %>%
 dat_2020 <- read.csv("data_raw/2020_flight_data.csv")
 #View(dat_2020)
 
-dat_2020 <- dplyr::rename(dat_2020, date = 1)
-dat_2020$date <- as_date(as.Date(dat_2020$date, "%m/%d/%Y"))
+#dat_2020$date <- as_date(as.Date(dat_2020$date, "%m/%d/%Y"))
 
 dat_2020$transect_total <- as.numeric(dat_2020$transect_total)
-dat_2020$transect_small <- as.numeric(dat_2020$transect_small)
-dat_2020$transect_large <- as.numeric(dat_2020$transect_large)
 
 dat_2020$transect_datetime <- as_datetime(dat_2020$transect_datetime)
 dat_2020$manual_datetime <- as_datetime(dat_2020$manual_datetime)
@@ -211,30 +212,29 @@ dat_2020$manual_datetime <- as_datetime(dat_2020$manual_datetime)
 dat_2020 <- dat_2020 %>%
   mutate(datetime = as_datetime(
     pmin(transect_datetime, manual_datetime, na.rm = TRUE))) %>% 
-  mutate(date_hour = round_date(datetime, "hour"))
+  mutate(date_hour = round_date(datetime, "hour")) %>% 
+  select(!c(2:8,13,14,16,17,20,21,25,26,28,29:31,38,39))
 ```
 
 ### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2020
 ```{r}
 dat_2020 <- dat_2020 %>%
   mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
-  mutate(transect_duration_min = transect_duration_sec/60)
-
-dat_2020 <- dat_2020 %>% 
-  mutate(transect_effort = transect_area_km2*transect_duration_min) %>% 
-  mutate(transect_total_density = transect_total/transect_effort) %>% 
-  mutate(transect_small_density = transect_small/transect_effort) %>%
-  mutate(transect_large_density = transect_large/transect_effort)
+  mutate(transect_duration_min = transect_duration_sec/60) %>% 
+  mutate(transect_effort_density =
+         transect_total/(transect_area_km2*transect_duration_min)) %>% 
+  mutate(transect_density = transect_total/transect_area_km2) #%>% 
+  #mutate(transect_small_density = transect_small/transect_effort) %>%
+  #mutate(transect_large_density = transect_large/transect_effort)
 
 dat_2020 <- dat_2020 %>%
   mutate(manual_area_km2 = manual_area_m2/1000000) %>% 
-  mutate(manual_duration_min = manual_duration_sec/60)
-
-dat_2020 <- dat_2020 %>% 
-  mutate(manual_effort = manual_area_km2*manual_duration_min) %>% 
-  mutate(manual_total_density = manual_total/manual_effort) %>% 
-  mutate(manual_small_density = manual_small/manual_effort) %>%
-  mutate(manual_large_density = manual_large/manual_effort)
+  mutate(manual_duration_min = manual_duration_sec/60) %>% 
+  mutate(manual_density_effort =
+         manual_total/(manual_area_km2*manual_duration_min)) %>% 
+  mutate(manual_density = manual_unique/manual_area_km2) #%>% 
+  #mutate(manual_small_density = manual_small/manual_effort) %>%
+  #mutate(manual_large_density = manual_large/manual_effort)
 ```
 
 ### Reading in tide data (Station 9411340)- 2020
@@ -249,10 +249,10 @@ tide_dat_2020 <- tide_dat_2020 %>%
   mutate(time = substring(time, 12)) %>% 
   mutate(date = as_datetime(Date)) %>% 
   unite(date_hour, c(date, time), sep = " ") %>% 
+  mutate(date_hour = as_datetime(date_hour)) %>%
   select(-c(1,3,4)) %>%
   rename(tide = 2)
 
-dat_2020$date_hour <- as.character(dat_2020$date_hour)
 tide_added_2020 <- left_join(dat_2020, tide_dat_2020, by = "date_hour")
 #View(tide_added_2020)
 ```
@@ -319,73 +319,75 @@ dat_2020 <- left_join(dat_2020, harbor_dat_2020, by = "date_hour")
 size_dat_2020 <- read.csv("data_raw/size_dat_2020.csv")
 #View(size_dat_2020)
 
-size_dat_2020 <- size_dat_2020 %>% dplyr::slice(4:nrow(size_dat_2020))
-size_dat_2020$date <- as.Date(size_dat_2020$date, "%m/%d/%Y")
-size_dat_2020$length <- as.numeric(size_dat_2020$length)
+#size_dat_2020$date <- as.Date(size_dat_2020$date, "%m/%d/%Y")
+
 size_dat_2020 <- size_dat_2020 %>% 
-                  mutate(length_m = length/3.2808)
-size_dat_2020 <- size_dat_2020 %>% 
-                  mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+                  mutate(length = as.numeric(length)) %>% 
+                  mutate(order = as.numeric(order)) %>% 
+                  mutate(length_m = length/3.2808) %>% 
+                  rename(video_YN = video) %>% 
+                  rename(tagged = tagged.) %>%
+                  rename(length_raw = length) %>% 
+                  rename(length_raw_m = length_m) %>% 
+                  slice(-363) #%>% 
+                  #mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
+#going to do size classification on the 3yr dataset instead
 
 size_dat_2020 %>% 
-  filter(size_class == "Adult") %>% 
+  filter(length_raw_m >= 3) %>% 
   nrow()
+#34 adults
 
 size_dat_2020 %>% 
-  filter(size_class == "Juvenile") %>% 
+  filter(length_raw_m < 3) %>% 
   nrow()
+#324 juveniles
 ```
-roughly 10x more juveniles than adults
+* roughly 10x more juveniles than adults (uncorrected lengths)
 
 ## 2021 Data Tidying
 
 ### Flight-Level Data Tidying - 2021
 ```{r}
 dat_2021 <- read.csv("data_raw/2021_flight_data.csv")
-#View(dat_2021)
+#view(dat_2021)
 
-dat_2021 <- dplyr::rename(dat_2021, date = 1)
-dat_2021$date <- as_date(as.Date(dat_2021$date, "%m/%d/%Y"))
+#dat_2021 <- dplyr::rename(dat_2021, date = 1)
+#dat_2021$date <- as_date(as.Date(dat_2021$date, "%m/%d/%Y"))
 
 dat_2021$transect_total <- as.numeric(dat_2021$transect_total)
-dat_2021$transect_small <- as.numeric(dat_2021$transect_small)
-dat_2021$transect_large <- as.numeric(dat_2021$transect_large)
-
-dat_2021$manual_small <- as.numeric(dat_2021$manual_small)
-dat_2021$manual_large <- as.numeric(dat_2021$manual_large)
+dat_2021$manual_unique <- as.numeric(dat_2021$manual_unique)
 dat_2021$manual_total <- as.numeric(dat_2021$manual_total)
 
 dat_2021$transect_datetime <- as_datetime(dat_2021$transect_datetime)
 dat_2021$manual_datetime <- as_datetime(dat_2021$manual_datetime)
 
 dat_2021 <- dat_2021 %>%
+  select(!c(3:6,9,10,15,16,18,19,22,23,29:32,39:41)) %>% 
   mutate(datetime = as_datetime(
     pmin(transect_datetime, manual_datetime, na.rm = TRUE))) %>% 
   mutate(date_hour = round_date(datetime, "hour"))
 ```
 
 ### Calculating density (sharks/km2) and effort (sharks/km2/min) - 2021
-Probably want to delete the parts dealing with "small" and "large" since that distinction is meaningless
 ```{r}
 dat_2021 <- dat_2021 %>%
   mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
-  mutate(transect_duration_min = transect_duration_sec/60)
-
-dat_2021 <- dat_2021 %>% 
-  mutate(transect_effort = transect_area_km2*transect_duration_min) %>% 
-  mutate(transect_total_density = transect_total/transect_effort) %>% 
-  mutate(transect_small_density = transect_small/transect_effort) %>%
-  mutate(transect_large_density = transect_large/transect_effort)
+  mutate(transect_duration_min = transect_duration_sec/60) %>% 
+  mutate(transect_density_effort =
+         transect_total/(transect_area_km2*transect_duration_min)) %>% 
+  mutate(transect_density = transect_total/transect_area_km2) #%>% 
+  #mutate(transect_small_density = transect_small/transect_effort) %>%
+  #mutate(transect_large_density = transect_large/transect_effort)
 
 dat_2021 <- dat_2021 %>%
   mutate(manual_area_km2 = manual_area_m2/1000000) %>% 
-  mutate(manual_duration_min = manual_duration_sec/60)
-
-dat_2021 <- dat_2021 %>% 
-  mutate(manual_effort = as.numeric(manual_area_km2*manual_duration_min)) %>% 
-  mutate(manual_total_density = manual_total/manual_effort) %>% 
-  mutate(manual_small_density = manual_small/manual_effort) %>%
-  mutate(manual_large_density = manual_large/manual_effort)
+  mutate(manual_duration_min = manual_duration_sec/60) %>% 
+  mutate(manual_density_effort = 
+         manual_unique/(manual_area_km2*manual_duration_min)) %>% 
+  mutate(manual_density = manual_unique/manual_area_km2) #%>% 
+  #mutate(manual_small_density = manual_small/manual_effort) %>%
+  #mutate(manual_large_density = manual_large/manual_effort)
 ```
 
 ### Reading in tide data (Station 9411340) - 2021
@@ -400,10 +402,10 @@ tide_dat_2021 <- tide_dat_2021 %>%
   mutate(time = substring(time, 12)) %>% 
   mutate(date = as_datetime(Date)) %>% 
   unite(date_hour, c(date, time), sep = " ") %>% 
+  mutate(date_hour = as_datetime(date_hour)) %>% 
   select(-c(1,3,4)) %>%
   rename(tide = 2)
 
-dat_2021$date_hour <- as.character(dat_2021$date_hour)
 dat_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
 #View(dat_2021)
 ```
@@ -548,28 +550,33 @@ dat_2021 <- left_join(dat_2021, harbor_dat_2021, by = "date_hour")
 ### Size Data Tidying (1 row = 1 individual) - 2021
 ```{r}
 size_dat_2021 <- read.csv("data_raw/size_dat_2021.csv")
-#View(size_dat_2021)
+#view(size_dat_2021)
 
-#size_dat_2021 <- size_dat_2021 %>% dplyr::slice(3:nrow(size_dat_2021))
-size_dat_2021$date <- as.Date(size_dat_2021$date, "%m/%d/%Y")
+#size_dat_2021$date <- as.Date(size_dat_2021$date, "%m/%d/%Y")
 size_dat_2021$length_raw <- as.numeric(size_dat_2021$length_raw)
 size_dat_2021$length_adj <- as.numeric(size_dat_2021$length_adj)
 
 size_dat_2021 <- size_dat_2021 %>% 
                   mutate(length_adj_m = length_adj/3.2808) %>% 
-                  mutate(length_raw_m = length_raw/3.2808)
-
-size_dat_2021 <- size_dat_2021 %>% 
-                  mutate(size_class = ifelse(length_adj_m < 3, "Juvenile", "Adult"))
+                  mutate(length_raw_m = length_raw/3.2808) %>%
+                  mutate(lat = as.numeric(lat)) %>% 
+                  rename(video_YN = video) %>% 
+                  rename(tagged = tagged.) #%>% 
+                  #mutate(size_class = ifelse(
+                    #length_adj_m < 3, "Juvenile", "Adult"))
+# going to do the adult/juvenile classification on the 3yr dataset instead
 
 size_dat_2021 %>% 
-  filter(size_class == "Adult") %>% 
+  filter(unique == "Y") %>% 
+  filter(length_adj_m >= 3) %>% 
   nrow()
+#143 adults
 
-size_dat_2021 %>% 
-  filter(size_class == "Juvenile") %>% 
+size_dat_2021 %>%
+  filter(unique == "Y") %>% 
+  filter(length_adj_m < 3) %>% 
   nrow()
-
+#148 juveniles
 ```
 MUCH higher % of adults than 2020 - almost 50/50 when adjusted size is used
 
@@ -577,10 +584,9 @@ MUCH higher % of adults than 2020 - almost 50/50 when adjusted size is used
 
 ### Combine 2019, 2020, and 2021 datasets
 ```{r}
-str(dat_2019)
-dat_2019$transect_datetime <- as_datetime(dat_2019$transect_datetime)
+#str(dat_2019)
+#str(dat_2020)
 
-str(dat_2020)
 #dat_2020 <- dat_2020 %>% 
                   #rename(WDIR = WDIR_deg,
                          #WSPD = WSPD_ms,
@@ -588,69 +594,40 @@ str(dat_2020)
                          #APD = APD_sec,
                         # MWD = MWD_deg,
                          #PRES = PRES_hPa)
-dat_2020$datetime.x <- as.character(dat_2020$datetime.x)  
-#dat_2020 <- select(dat_2020, -(17:19))
-#not sure why this^ was ever necessary
+#above code should be moved to 2020 tidying section (if it's needed at all)
 
 daily_2yr_dat <- full_join(dat_2019, dat_2020)
-#View(daily_2yr_dat)
+#view(daily_2yr_dat)
 
-daily_2yr_dat$manual_small <- as.numeric(daily_2yr_dat$manual_small)
-dat_2021$manual_small <- as.numeric(dat_2021$manual_small)
-daily_2yr_dat$manual_large <- as.numeric(daily_2yr_dat$manual_large)
-dat_2021$manual_large <- as.numeric(dat_2021$manual_large)
-daily_2yr_dat$manual_unique <- as.numeric(daily_2yr_dat$manual_unique)
-dat_2021$manual_unique <- as.numeric(dat_2021$manual_unique)
-daily_2yr_dat$manual_total <- as.numeric(daily_2yr_dat$manual_total)
-dat_2021$manual_total <- as.numeric(dat_2021$manual_total)
-dat_2021$water_temp_channel <- as.numeric(dat_2021$water_temp_channel)
-daily_2yr_dat$datetime.x <- as_datetime(daily_2yr_dat$datetime.x)
 daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
-#View(daily_3yr_dat)
+#view(daily_3yr_dat)
 ```
 
-## Tidying 3-year data
+### Tidying 3-year data
 ```{r}
-#str(daily_3yr_dat)
-#View(daily_3yr_dat)
-
 #daily_3yr_dat <- daily_3yr_dat %>% 
   #select(-c(1, 31, 39:42, 48, 76))
 
-daily_3yr_dat <- daily_3yr_dat %>% mutate(date = as.Date(date, origin = "1970-01-01"))
-daily_3yr_dat <- daily_3yr_dat %>% mutate(date = if_else(year(date) < 2000, date + years(2000), date))
+#daily_3yr_dat <- daily_3yr_dat %>% mutate(date = as.Date(date))
+#daily_3yr_dat <- daily_3yr_dat %>% mutate(date = if_else(year(date) < 2000, date + years(2000), date))
 
-daily_3yr_dat <- mutate(daily_3yr_dat, year = as_factor(year(date)))
-
-daily_3yr_dat <- mutate(daily_3yr_dat, day = yday(date))
-daily_3yr_dat <- mutate(daily_3yr_dat, day2 = (yday(date))^2)
+daily_3yr_dat <- daily_3yr_dat %>% 
+  mutate(year = as_factor(year(datetime))) %>% 
+  mutate(day = yday(datetime)) %>% 
+  mutate(day2 = (yday(datetime))^2)
 
 write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 ```
 
-### Building 3yr size dataset
+## Building 3yr size dataset
 ```{r}
-size_dat_2019$video <- as.character(size_dat_2019$video)
-size_dat_2019$order <- as.character(size_dat_2019$order)
-size_dat_2019 <- size_dat_2019 %>% 
-                  rename(tagged. = tagged,
-                         altitude = alt)
-
-size_dat_2019$unique <- "Y"
-size_dat_2019$tagged. <- "X"
-size_dat_2020$altitude <- as.numeric(size_dat_2020$altitude)
-
 size_dat_2yr <- full_join(size_dat_2019, size_dat_2020)
-size_dat_2yr$order <- as.integer(size_dat_2yr$order)
-size_dat_2021$altitude <- as.numeric(size_dat_2021$altitude)
-size_dat_2021$lat <- as.numeric(size_dat_2021$lat)
+
 size_dat_3yr <- full_join(size_dat_2yr, size_dat_2021)
-#View(size_dat_3yr)
+#view(size_dat_3yr)
 
 size_dat_3yr <- size_dat_3yr %>% 
-                  rename(length_ft = length,
-                         length = length_m,
-                         tagged = tagged.)
+                  select(!c(17:19))
 
 write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
 ```
@@ -661,26 +638,25 @@ write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
 size_dat_3yr <- read.csv("data/size_dat_3yr.csv")
 
 size_dat_unique <- size_dat_3yr %>%
-                    filter(unique == "Y") %>% 
-                    mutate(year = year(date))
+                    filter(unique == "Y")
 
 nrow(size_dat_unique)
 ```
-919 sightings
+919 sightings across 3 years
 
 ```{r}
-size_dat_unique$date <- as_date(size_dat_unique$date)
+size_dat_unique$date <- as.character(size_dat_unique$date)
 joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
-#View(joined_3yr)
+#view(joined_3yr)
 ```
 
 ## Adding size classes to daily 3yr dataframe
 ```{r}
 size_classed_3yr <- joined_3yr %>%
-  filter(!is.na(length)) %>% 
+  filter(!is.na(length_adj_m)) %>% 
   group_by(date) %>%
-  dplyr::summarize(juvenile = sum(length < 3), 
-                   adult = sum(length >= 3))
+  dplyr::summarize(juvenile = sum(length_adj_m < 3), 
+                   adult = sum(length_adj_m >= 3))
 
 #View(size_classed_3yr)
 
@@ -690,9 +666,9 @@ ggplot(data = size_classed_3yr, aes(x = adult)) +
 
 daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
 
-daily_3yr_dat <- daily_3yr_dat  %>%
-  mutate(juvenile_density = juvenile/(transect_effort + manual_effort)) %>%
-  mutate(adult_density = adult/(transect_effort + manual_effort))
+#daily_3yr_dat <- daily_3yr_dat  %>%
+  #mutate(juvenile_density = juvenile/(transect_effort + manual_effort)) %>%
+  #mutate(adult_density = adult/(transect_effort + manual_effort))
 ```
 
 ## Adding wharf data - not sure why I needed this?
@@ -721,13 +697,45 @@ daily_3yr_dat <- daily_3yr_dat %>%
 ```{r}
 dat_no_19 <- daily_3yr_dat %>% 
   filter(year(date_hour) != 2019)
-dat_no_19$date_hour <- as_datetime(dat_no_19$date_hour)
-dat_no_19 <- mutate(dat_no_19, year = year(date_hour))
 ```
 
 ===============================================================================
 
 # Analyses for Thesis
+
+## Rudimentary power analysis - do weekly averages change when only half of the data is used?
+```{r}
+pwr_dat <- dat_2021 %>% 
+  select(datetime, total_unique) %>% 
+  mutate(every_other = ifelse(row_number() %% 2 == 1, total_unique, NA)) %>% 
+  group_by(week(datetime)) %>% 
+  summarize(mean_total = mean(total_unique, na.rm = TRUE),
+            mean_eo = mean(every_other, na.rm = TRUE)) %>% 
+  rename(week = 1)
+
+mean(pwr_dat$mean_total)
+#4.23 when all data used
+
+mean(pwr_dat$mean_eo, na.rm = TRUE)
+#4.31 when every other survey used
+
+t.test(pwr_dat$mean_total, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
+
+wilcox.test(pwr_dat$mean_total, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
+
+
+pwr_dat %>%
+  pivot_longer(mean_total:mean_eo, names_to = "Data", values_to = "weekly_mean") %>% 
+  ggplot(aes(x = week, y = weekly_mean, fill = Data)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_grid(rows = vars(Data)) +
+    theme_clean() +
+    labs(x = "Week", y = "Weekly Mean") +
+    theme(strip.text.y = element_blank()) +
+    scale_fill_manual(labels = c("Every other survey", "All data"),
+                      values = c("darkgreen", "orange3"))
+    
+```
 
 ## Investigating different metrics - raw count (each method and "unique") and density
 ```{r}
@@ -856,9 +864,8 @@ method_glm_dat <- dat_no_19 %>%
                                     values_to = "count") %>% 
   pivot_longer(c(transect_area_km2, manual_area_km2), names_to = "area_method",
                                     values_to = "area") %>% 
-  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0) %>% 
-  mutate(year = as.factor(year(date))) %>% 
-  mutate(method = as.factor(method))
+  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0)
+#selects every 1st and 4th row (remainder 1 and remainder 0)
 
 method_glm_pois <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = "poisson")
 
@@ -992,7 +999,7 @@ method_dens_test
 # NOT more likely to see a higher density of sharks (count per unit area surveyed) in one survey method vs the other
 
 mean(manual_dens$density)
-#average manual density is 11.27 sharks/km2
+# average manual density is 11.27 sharks/km2
 
 mean(transect_dens$density)
 # average transect density is 11.25 sharks/km2
@@ -1288,6 +1295,14 @@ summary(year_glm_best)
 yr_bst_res <- simulateResiduals(year_glm_best)
 plot(yr_bst_res)
 #passes DHARMa checks
+
+Anova(year_glm)
+year_emms <- emmeans(year_glm, "year")
+pwpm(year_emms, type = "response")
+
+daily_3yr_narm %>% 
+  group_by(year) %>% 
+  summarize(density = mean(transect_total/transect_area_km2))
 ```
 * Best model is year + day + hour with no offset for area surveyed
 * adding area surveyed increases AIC (transect area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
@@ -1530,7 +1545,7 @@ plot(hour_gam, residuals = TRUE, pch = 1)
 
 ### Year is categorical so it doesn't make sense to use GAM unless hour or day has a non-linear effect on count:
 ```{r}
-ggplot(gam_dat, aes(x = hour, y = transect_total))+
+ggplot(gam_dat, aes(x = hour, y = total_unique))+
   geom_jitter() +
   geom_smooth()
 
@@ -1706,6 +1721,17 @@ size_dat_2021 %>%
 #out of 291 unique manual sightings
 
 size_dat_2021 %>% 
+  filter(length_adj_m > 1) %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = length_adj)) +
+    geom_histogram() +
+    geom_vline(xintercept = 9.8, lty = 2, size = 1, color = "red") +
+    geom_vline(xintercept = 8, lty = 2, size = 1, color = "blue") +
+    theme_bw() +
+    scale_x_continuous(breaks = c(4,6,8,10,12,14,16,18,20)) +
+    labs(x = "Length (ft)", y = "Count")
+
+size_dat_2021 %>% 
   filter(depth == "surface") %>% 
   ggplot(aes(x = length_raw_m)) +
     geom_histogram()
@@ -1821,11 +1847,20 @@ size_dat_2021 %>%
 
 ## Modelling effects of environmental and detection-related variables
 ```{r}
+gam_dat <- daily_3yr_dat %>% 
+  filter(!is.na(transect_total)) %>%
+  filter(!is.na(transect_area_km2)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>% 
+  filter(!is.na(day)) %>% 
+  #filter(!is.na(sky)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  filter(!is.na(vis))
+    
+gam <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc") + s(day, bs = "cc", k = 20) + s(beaufort, k = 5) + s(vis, k = 5) + offset(transect_area_km2), data = gam_dat)
 
-
-
-
-
+summary(gam)
 ```
 
 ===============================================================================
@@ -1836,8 +1871,8 @@ size_dat_2021 %>%
 ## Time of day (using data for year GLM)
 ```{r}
 ggplot(daily_3yr_narm, aes(x = hour, y = transect_total)) +
-  geom_jitter() +
-  geom_smooth(method = "lm")
+  geom_jitter() #+
+  #geom_smooth(method = "lm")
 
 hour_lm <- lm(transect_total ~ hour, data = daily_3yr_narm)
 summary(hour_lm)
