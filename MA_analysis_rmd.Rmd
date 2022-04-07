@@ -10,7 +10,7 @@ editor_options:
 #Setup
 ```{r, eval=FALSE}
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv"))
-#install.packages("mgcv")
+install.packages("visreg")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -41,12 +41,13 @@ library(bbmle) #AIC tables
 library(emmeans)#effects testing
 library(gt)#nice tables
 library(webshot) #saving gt tables
-library(cowplot)
+library(cowplot) #moo
 library(simfit) #simulating models
 library(jtools)
 library(ggstance)
 library(AER)
 library(mgcv) #GAMs
+library(visreg) #visualizing GAMs
 #webshot::install_phantomjs() 
 #citation("ptest")
 ```
@@ -723,7 +724,6 @@ t.test(pwr_dat$mean_total, pwr_dat$mean_eo, paired = TRUE, alternative = "two.si
 
 wilcox.test(pwr_dat$mean_total, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
 
-
 pwr_dat %>%
   pivot_longer(mean_total:mean_eo, names_to = "Data", values_to = "weekly_mean") %>% 
   ggplot(aes(x = week, y = weekly_mean, fill = Data)) +
@@ -734,7 +734,6 @@ pwr_dat %>%
     theme(strip.text.y = element_blank()) +
     scale_fill_manual(labels = c("Every other survey", "All data"),
                       values = c("darkgreen", "orange3"))
-    
 ```
 
 ## Investigating different metrics - raw count (each method and "unique") and density
@@ -1846,6 +1845,8 @@ size_dat_2021 %>%
 ```
 
 ## Modelling effects of environmental and detection-related variables
+
+### Build the dataset to be used in the GAM
 ```{r}
 gam_dat <- daily_3yr_dat %>% 
   filter(!is.na(transect_total)) %>%
@@ -1856,11 +1857,45 @@ gam_dat <- daily_3yr_dat %>%
   filter(!is.na(day)) %>% 
   #filter(!is.na(sky)) %>% 
   filter(!is.na(beaufort)) %>% 
-  filter(!is.na(vis))
-    
-gam <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc") + s(day, bs = "cc", k = 20) + s(beaufort, k = 5) + s(vis, k = 5) + offset(transect_area_km2), data = gam_dat)
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  filter(!is.na(vis)) %>% 
+  mutate(vis = as.factor(vis))
+
+```
+
+### Looking at trends with the detectability variables
+```{r}
+ggplot(gam_dat, aes(x = beaufort, y = transect_total)) + 
+  geom_jitter()
+
+ggplot(gam_dat, aes(x = vis, y = transect_total)) + 
+  geom_jitter()
+```
+
+### temporal and detectability variables, no interactions
+```{r}
+gam1 <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", k = 10) + s(day, bs = "cc", k = 100) + beaufort + vis + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb)
+#REML used for small dataset, to prevent over-smoothing
+
+summary(gam1)
+gam.check(gam1)
+# negative binomial fixes qq plot (conforms with temporal GLM)
+
+plot.gam(gam1)
+#not sure why day is flat
+
+visreg(gam1)
+```
+
+### temporal and detectability variables, with year interactions for day and hour
+```{r}
+gam <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", by = year) + s(day, bs = "cc", by = year) + beaufort + vis + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb)
 
 summary(gam)
+gam.check(gam)
+plot.gam(gam)
+
+visreg(gam)
 ```
 
 ===============================================================================
