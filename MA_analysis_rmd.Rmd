@@ -10,7 +10,7 @@ editor_options:
 #Setup
 ```{r, eval=FALSE}
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv"))
-install.packages("visreg")
+#install.packages("visreg")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -151,7 +151,7 @@ dat_2019 <- flights_plus_channel_dat_2019 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2)
 ```
 
-### Reading in SB harbor data (Station 9411340) - 2019
+### Reading in SB harbor data (Station 9411340) - 2019 (as of 4/9 planning on replacing this with CSULB or LTER data)
 ```{r}
 harbor_dat_2019 <- read.csv("data_raw/2019_harbor_dat.csv")
 #View(harbor_dat_2019)
@@ -295,7 +295,7 @@ dat_2020 <- flights_plus_channel_dat_2020 %>%
 #View(dat_2020)
 ```
 
-### Reading in SB harbor data (Station 9411340) - 2020
+### Reading in SB harbor data (Station 9411340) - 2020 (as of 4/9 planning on replacing this with CSULB or LTER data)
 ```{r}
 harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.csv")
 #View(harbor_dat_2020)
@@ -527,7 +527,7 @@ dat_2021 <- flights_plus_channel_dat_2021 %>%
 #View(dat_2021)
 ```
 
-### Reading in SB harbor data (Station 9411340) - 2021
+### Reading in SB harbor data (Station 9411340) - 2021 (as of 4/9 planning on replacing this with CSULB or LTER data)
 ```{r}
 harbor_dat_2021 <- read.csv("data_raw/2021_harbor_dat.txt")
 #View(harbor_dat_2021)
@@ -601,7 +601,7 @@ daily_2yr_dat <- full_join(dat_2019, dat_2020)
 #view(daily_2yr_dat)
 
 daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
-#view(daily_3yr_dat)
+view(daily_3yr_dat)
 ```
 
 ### Tidying 3-year data
@@ -612,10 +612,32 @@ daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
 #daily_3yr_dat <- daily_3yr_dat %>% mutate(date = as.Date(date))
 #daily_3yr_dat <- daily_3yr_dat %>% mutate(date = if_else(year(date) < 2000, date + years(2000), date))
 
-daily_3yr_dat <- daily_3yr_dat %>% 
+daily_3yr_dat <- daily_3yr_dat %>%
+  rename(datetime = datetime.x) %>% 
   mutate(year = as_factor(year(datetime))) %>% 
   mutate(day = yday(datetime)) %>% 
   mutate(day2 = (yday(datetime))^2)
+```
+
+### Reading in LTER data
+```{r}
+lter_dat <- read.csv("data_raw/lter_dat.csv")
+
+lter_dat <- lter_dat %>% 
+  filter(year > 2018) %>% 
+  filter(year < 2022) %>% 
+  mutate(hour = (24*decimal_time)) %>%
+  filter(row_number() %% 3 == 1) %>% 
+  mutate(hour = round(hour, digits = 1)) %>% 
+  mutate(date_hour = make_datetime(year, month, day, hour)) %>% 
+  mutate(year = as.factor(year)) %>% 
+  rename(day_of_month = day) %>% 
+  select(-c(1, 6:53, 58:75))
+```
+
+### Adding LTER data to daily 3yr dataset 
+```{r}
+daily_3yr_dat <- left_join(daily_3yr_dat, lter_dat, by = "date_hour")
 
 write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 ```
@@ -643,7 +665,7 @@ size_dat_unique <- size_dat_3yr %>%
 
 nrow(size_dat_unique)
 ```
-919 sightings across 3 years
+875 sightings across 3 years
 
 ```{r}
 size_dat_unique$date <- as.character(size_dat_unique$date)
@@ -672,7 +694,7 @@ daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
   #mutate(adult_density = adult/(transect_effort + manual_effort))
 ```
 
-## Adding wharf data - not sure why I needed this?
+## Adding wharf data DO NOT RUN - not sure why I ever needed this?
 ```{r}
 wharf_dat <- read.csv("data_raw/wharf_dat.csv")
 
@@ -754,13 +776,13 @@ dat_no_19 %>%
             #"Maximum transect density" = max(transect_total/transect_area_km2, na.rm = TRUE)
   )
 ```
-* Looks like manual count was higher than transect count in 2020, but not 2021
+* Looks like manual count was higher than transect count in 2020, but not 2021. Suggests that more sharks were close to shore (under the inner transect) in 2021 than in 2020
 
 ```{r}
 ggplot(dat_no_19, aes(x = manual_unique, y = transect_total)) +
   geom_jitter() +
   geom_smooth(method = "lm")
-#outliers are potentially a big problem
+#outliers here are potentially a big problem for only using one method in analyses
 
 ggplot(daily_3yr_dat, aes(x = transect_total)) +
   geom_bar(stat = "count")
@@ -1849,33 +1871,83 @@ size_dat_2021 %>%
 ### Build the dataset to be used in the GAM
 ```{r}
 gam_dat <- daily_3yr_dat %>% 
+  rename(year = year.x) %>% 
   filter(!is.na(transect_total)) %>%
   filter(!is.na(transect_area_km2)) %>% 
   filter(!is.na(year)) %>% 
   filter(!is.na(date_hour)) %>% 
   mutate(hour = as.numeric(hour(date_hour))) %>% 
   filter(!is.na(day)) %>% 
-  #filter(!is.na(sky)) %>% 
   filter(!is.na(beaufort)) %>% 
   mutate(beaufort = as.factor(beaufort)) %>% 
   filter(!is.na(vis)) %>% 
-  mutate(vis = as.factor(vis))
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>% 
+  filter(Salinity < 9000) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(tide)) %>% 
+  mutate(presence = ifelse(total_unique > 0, 1, 0))
 
+view(gam_dat)
+#idk how to get rid of NAs and "NA"s
 ```
 
-### Looking at trends with the detectability variables
+### Trends with detectability variables
 ```{r}
-ggplot(gam_dat, aes(x = beaufort, y = transect_total)) + 
-  geom_jitter()
+ggplot(gam_dat, aes(x = as.numeric(beaufort), y = transect_total)) + 
+  geom_point() +
+  geom_smooth()
 
-ggplot(gam_dat, aes(x = vis, y = transect_total)) + 
-  geom_jitter()
+gam_dat %>% 
+  group_by(beaufort) %>% 
+  summarize(presence = mean(presence, na.rm = TRUE)) %>% 
+  ggplot(aes(x = beaufort, y = presence)) +
+    geom_bar(stat = "identity")
+#unexpected INCREASE in presence as beaufort increases
+
+ggplot(gam_dat, aes(x = as.numeric(vis), y = transect_total)) +
+  geom_point() +
+  geom_smooth()
 ```
 
-### temporal and detectability variables, no interactions
+### Trends with LTER variables
 ```{r}
-gam1 <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", k = 10) + s(day, bs = "cc", k = 100) + beaufort + vis + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb)
-#REML used for small dataset, to prevent over-smoothing
+ggplot(gam_dat, aes(x = Temp_top, y = transect_total)) + 
+  geom_jitter() +
+  geom_smooth()
+
+ggplot(gam_dat, aes(x = Temp_top, y = total_unique)) + 
+  geom_jitter() +
+  geom_smooth(method = "lm")
+
+ggplot(gam_dat, aes(x = Salinity, y = transect_total)) + 
+  geom_jitter() +
+  geom_smooth()
+#very tiny variation in salinity, this won't be useful
+
+ggplot(gam_dat, aes(x = Fluoroescence, y = transect_total)) + 
+  geom_jitter() +
+  geom_smooth()
+#I guess there are no valid fluorescence (chlorophyll) measurements
+```
+
+### Trends with tide and swell
+```{r}
+ggplot(gam_dat, aes(x = tide, y = transect_total)) + 
+  geom_jitter() +
+  geom_smooth()
+
+ggplot(gam_dat, aes(x = WVHT, y = transect_total)) + 
+  geom_jitter() +
+  geom_smooth()
+```
+*not much going on with either of these
+
+### transect total GLM, no interactions
+```{r}
+gam1 <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", k = 10) + s(day, bs = "cc", k = 100) + beaufort + vis + s(tide) + s(Temp_top) + s(WVHT, k = 40) + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+#REML used for small dataset (observations in the 100's), to prevent over-smoothing
 
 summary(gam1)
 gam.check(gam1)
@@ -1885,18 +1957,37 @@ plot.gam(gam1)
 #not sure why day is flat
 
 visreg(gam1)
+
+dredge(gam1)
+#best model is beaufort, hour, waveheight, and year, but top 12 models (6 pairs with/without day) are all within delta of 2
+#models with or without day have the same AIC
 ```
 
-### temporal and detectability variables, with year interactions for day and hour
+### transect total GLM, with year interactions
 ```{r}
-gam <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", by = year) + s(day, bs = "cc", by = year) + beaufort + vis + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb)
+gam2 <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", by = year) + s(day, bs = "cc", by = year) + beaufort + vis + s(tide, by = year) + s(Temp_top, by = year) + s(WVHT, by = year, k = 40) + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
 
-summary(gam)
-gam.check(gam)
-plot.gam(gam)
+summary(gam2)
+gam.check(gam2)
+#issues with WVHT (k = 40 is too low)
+plot.gam(gam2)
 
-visreg(gam)
+visreg(gam2)
+
+anova.gam(gam2)
+#hour significant in all years but 2019
+#day significant in all years
+#tide n.s.
+#temp n.s.
+#WVHT n.s.
+
 ```
+
+### comparing interaction and non-interaction models:
+```{r}
+AIC(gam1, gam2)
+```
+
 
 ===============================================================================
 
