@@ -9,8 +9,8 @@ editor_options:
 
 #Setup
 ```{r, eval=FALSE}
-#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv"))
-#install.packages("visreg")
+#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug"))
+#install.packages("itsadug")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -48,11 +48,12 @@ library(ggstance)
 library(AER)
 library(mgcv) #GAMs
 library(visreg) #visualizing GAMs
+library(itsadug)
 #webshot::install_phantomjs() 
 #citation("ptest")
 ```
 
-==============================================================================================
+===========================================================================
 
 # Data Tidying
 
@@ -151,7 +152,7 @@ dat_2019 <- flights_plus_channel_dat_2019 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2)
 ```
 
-### Reading in SB harbor data (Station 9411340) - 2019 (as of 4/9 planning on replacing this with CSULB or LTER data)
+### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2019 (as of 4/9 planning on replacing this with CSULB or LTER data)
 ```{r}
 harbor_dat_2019 <- read.csv("data_raw/2019_harbor_dat.csv")
 #View(harbor_dat_2019)
@@ -175,26 +176,26 @@ dat_2019 <- left_join(dat_2019, harbor_dat_2019, by = "date_hour")
 ### Size Data Tidying (1 row = 1 individual) - 2019
 ```{r}
 size_dat_2019 <- read.csv("data_raw/size_dat_2019.csv")
-#View(size_dat_2019)
+#view(size_dat_2019)
 
 size_dat_2019 <- size_dat_2019 %>% 
-  select(1:10) %>% 
+  select(1:16) %>% 
   dplyr::slice(-(48:49))
 
 #size_dat_2019$date <- as.Date(size_dat_2019$date, "%m/%d/%Y")
 #size_dat_2019$length <- as.numeric(size_dat_2019$length)
 
 size_dat_2019 <- size_dat_2019 %>% 
-                  mutate(length_raw_m = length/3.2808) %>% 
-                  rename(length_raw = length) #%>% 
+                  mutate(length_adj_m = length_adj/3.2808) %>% 
+                  mutate(length_raw_m = length_raw/3.2808) #%>% 
                   #mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
 #will do size classification on the 3yr dataset
 
 size_dat_2019 %>%
-  filter(length_raw_m >= 3) %>% 
+  filter(length_adj_m >= 3) %>% 
   nrow()
 ```
-*no adults! (unadjusted lengths)
+*no adults with unadjusted lengths, 15 with adjusted lengths!
 
 ## 2020 Data Tidying
 
@@ -295,7 +296,7 @@ dat_2020 <- flights_plus_channel_dat_2020 %>%
 #View(dat_2020)
 ```
 
-### Reading in SB harbor data (Station 9411340) - 2020 (as of 4/9 planning on replacing this with CSULB or LTER data)
+### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2020 (as of 4/9 planning on replacing this with CSULB or LTER data)
 ```{r}
 harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.csv")
 #View(harbor_dat_2020)
@@ -323,28 +324,34 @@ size_dat_2020 <- read.csv("data_raw/size_dat_2020.csv")
 #size_dat_2020$date <- as.Date(size_dat_2020$date, "%m/%d/%Y")
 
 size_dat_2020 <- size_dat_2020 %>% 
-                  mutate(length = as.numeric(length)) %>% 
+                  mutate(length_raw = as.numeric(length_raw)) %>%
+                  mutate(length_adj = as.numeric(length_adj)) %>% 
                   mutate(order = as.numeric(order)) %>% 
-                  mutate(length_m = length/3.2808) %>% 
+                  mutate(length_adj_m = length_adj/3.2808) %>% 
+                  mutate(length_raw_m = length_raw/3.2808) %>%
                   rename(video_YN = video) %>% 
                   rename(tagged = tagged.) %>%
-                  rename(length_raw = length) %>% 
-                  rename(length_raw_m = length_m) %>% 
+                  mutate(depth.correction.factor =
+                         as.numeric(depth.correction.factor)) %>% 
+                  mutate(asl.correction.factor =
+                           as.numeric(asl.correction.factor)) %>% 
                   slice(-363) #%>% 
                   #mutate(size_class = ifelse(length_m < 3, "Juvenile", "Adult"))
 #going to do size classification on the 3yr dataset instead
 
 size_dat_2020 %>% 
-  filter(length_raw_m >= 3) %>% 
+  filter(length_adj_m >= 3) %>% 
   nrow()
-#34 adults
+#34 adults unadjusted
+#70 adults adjusted
 
 size_dat_2020 %>% 
-  filter(length_raw_m < 3) %>% 
+  filter(length_adj_m < 3) %>% 
   nrow()
-#324 juveniles
+#324 juveniles unadjusted
+#288 adults adjusted
 ```
-* roughly 10x more juveniles than adults (uncorrected lengths)
+* roughly 10x more juveniles than adults (uncorrected lengths), goes down to 4:1 juvenile:adult when adjusted lengths used
 
 ## 2021 Data Tidying
 
@@ -509,9 +516,8 @@ channel_dat_2021 <- channel_dat_2021_raw %>%
   ungroup() %>% 
   filter(MM > 3) %>% 
   add_column(year = 2021, .before = 1) %>% 
-  mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
-  mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
-  mutate(date_hour = round_date(datetime, "hour")) %>% 
+  mutate(date_hour = make_datetime(year, MM, DD, hh)) %>% 
+  mutate(date_hour = with_tz(date_hour, "US/Pacific")) %>%
   mutate(max_wtemp_previous_24 = slide_dbl(WTMP, max, .before = 24)) %>% 
   mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
   mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
@@ -527,7 +533,7 @@ dat_2021 <- flights_plus_channel_dat_2021 %>%
 #View(dat_2021)
 ```
 
-### Reading in SB harbor data (Station 9411340) - 2021 (as of 4/9 planning on replacing this with CSULB or LTER data)
+### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2021 (as of 4/9 planning on replacing this with CSULB or LTER data)
 ```{r}
 harbor_dat_2021 <- read.csv("data_raw/2021_harbor_dat.txt")
 #View(harbor_dat_2021)
@@ -562,7 +568,12 @@ size_dat_2021 <- size_dat_2021 %>%
                   mutate(length_raw_m = length_raw/3.2808) %>%
                   mutate(lat = as.numeric(lat)) %>% 
                   rename(video_YN = video) %>% 
-                  rename(tagged = tagged.) #%>% 
+                  rename(tagged = tagged.) %>%
+                  mutate(depth.correction.factor =
+                         as.numeric(depth.correction.factor)) %>% 
+                  mutate(asl.correction.factor =
+                           as.numeric(asl.correction.factor)) %>% 
+                  mutate(altitude = as.numeric(altitude))#%>% 
                   #mutate(size_class = ifelse(
                     #length_adj_m < 3, "Juvenile", "Adult"))
 # going to do the adult/juvenile classification on the 3yr dataset instead
@@ -571,13 +582,13 @@ size_dat_2021 %>%
   filter(unique == "Y") %>% 
   filter(length_adj_m >= 3) %>% 
   nrow()
-#143 adults
+#142 adults
 
 size_dat_2021 %>%
   filter(unique == "Y") %>% 
   filter(length_adj_m < 3) %>% 
   nrow()
-#148 juveniles
+#156 juveniles
 ```
 MUCH higher % of adults than 2020 - almost 50/50 when adjusted size is used
 
@@ -585,35 +596,17 @@ MUCH higher % of adults than 2020 - almost 50/50 when adjusted size is used
 
 ### Combine 2019, 2020, and 2021 datasets
 ```{r}
-#str(dat_2019)
-#str(dat_2020)
-
-#dat_2020 <- dat_2020 %>% 
-                  #rename(WDIR = WDIR_deg,
-                         #WSPD = WSPD_ms,
-                        # DPD = DPD_sec,
-                         #APD = APD_sec,
-                        # MWD = MWD_deg,
-                         #PRES = PRES_hPa)
-#above code should be moved to 2020 tidying section (if it's needed at all)
-
 daily_2yr_dat <- full_join(dat_2019, dat_2020)
 #view(daily_2yr_dat)
 
 daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
-view(daily_3yr_dat)
+#view(daily_3yr_dat)
 ```
 
 ### Tidying 3-year data
 ```{r}
-#daily_3yr_dat <- daily_3yr_dat %>% 
-  #select(-c(1, 31, 39:42, 48, 76))
-
-#daily_3yr_dat <- daily_3yr_dat %>% mutate(date = as.Date(date))
-#daily_3yr_dat <- daily_3yr_dat %>% mutate(date = if_else(year(date) < 2000, date + years(2000), date))
-
 daily_3yr_dat <- daily_3yr_dat %>%
-  rename(datetime = datetime.x) %>% 
+  #rename(datetime = datetime.x) %>% 
   mutate(year = as_factor(year(datetime))) %>% 
   mutate(day = yday(datetime)) %>% 
   mutate(day2 = (yday(datetime))^2)
@@ -647,27 +640,25 @@ write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
 size_dat_2yr <- full_join(size_dat_2019, size_dat_2020)
 
 size_dat_3yr <- full_join(size_dat_2yr, size_dat_2021)
-#view(size_dat_3yr)
+#View(size_dat_3yr)
 
 size_dat_3yr <- size_dat_3yr %>% 
-                  select(!c(17:19))
+                  select(!c(22:27))
 
-write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
+#write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
 ```
 
 ### New 3yr df with size of each unique shark
 (1 row = 1 shark, daily data is repeated for days where multiple sharks were observed)
 ```{r}
-size_dat_3yr <- read.csv("data/size_dat_3yr.csv")
+#size_dat_3yr <- read.csv("data/size_dat_3yr.csv")
 
 size_dat_unique <- size_dat_3yr %>%
                     filter(unique == "Y")
 
 nrow(size_dat_unique)
-```
-875 sightings across 3 years
+#919 sightings across 3 years
 
-```{r}
 size_dat_unique$date <- as.character(size_dat_unique$date)
 joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
 #view(joined_3yr)
@@ -679,9 +670,9 @@ size_classed_3yr <- joined_3yr %>%
   filter(!is.na(length_adj_m)) %>% 
   group_by(date) %>%
   dplyr::summarize(juvenile = sum(length_adj_m < 3), 
-                   adult = sum(length_adj_m >= 3))
+                   adult = sum(length_adj_m >= 3)) 
 
-#View(size_classed_3yr)
+view(size_classed_3yr)
 
 ggplot(data = size_classed_3yr, aes(x = adult)) +
   geom_bar()
@@ -689,12 +680,13 @@ ggplot(data = size_classed_3yr, aes(x = adult)) +
 
 daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
 
-#daily_3yr_dat <- daily_3yr_dat  %>%
-  #mutate(juvenile_density = juvenile/(transect_effort + manual_effort)) %>%
-  #mutate(adult_density = adult/(transect_effort + manual_effort))
+daily_3yr_dat <- daily_3yr_dat  %>%
+  mutate(juvenile = ifelse(is.na(juvenile), 0, juvenile)) %>% 
+  mutate(adult = ifelse(is.na(adult), 0, adult)) %>% 
+  mutate(total_sized = juvenile + adult)
 ```
 
-## Adding wharf data DO NOT RUN - not sure why I ever needed this?
+## DO NOT RUN: Adding wharf data - not sure why I ever needed this?
 ```{r}
 wharf_dat <- read.csv("data_raw/wharf_dat.csv")
 
@@ -715,14 +707,13 @@ daily_3yr_dat <- daily_3yr_dat %>%
   rename(wharf_temp = temperature)
 ```
 
-
 ## Dataframe without 2019
 ```{r}
 dat_no_19 <- daily_3yr_dat %>% 
   filter(year(date_hour) != 2019)
 ```
 
-===============================================================================
+=============================================================================
 
 # Analyses for Thesis
 
@@ -732,22 +723,25 @@ pwr_dat <- dat_2021 %>%
   select(datetime, total_unique) %>% 
   mutate(every_other = ifelse(row_number() %% 2 == 1, total_unique, NA)) %>% 
   group_by(week(datetime)) %>% 
-  summarize(mean_total = mean(total_unique, na.rm = TRUE),
-            mean_eo = mean(every_other, na.rm = TRUE)) %>% 
+  summarize(mean_all = mean(total_unique, na.rm = TRUE),
+            sd_all = sd(total_unique, na.rm = TRUE),
+            mean_eo = mean(every_other, na.rm = TRUE),
+            sd_eo = sd(every_other, na.rm = TRUE)) %>% 
   rename(week = 1)
+#not sure sd is relevant here, especially for eo data where there are only two or three observations per week
 
-mean(pwr_dat$mean_total)
+mean(pwr_dat$mean_all)
 #4.23 when all data used
 
 mean(pwr_dat$mean_eo, na.rm = TRUE)
 #4.31 when every other survey used
 
-t.test(pwr_dat$mean_total, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
+t.test(pwr_dat$mean_all, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
 
-wilcox.test(pwr_dat$mean_total, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
+wilcox.test(pwr_dat$mean_all, pwr_dat$mean_eo, paired = TRUE, alternative = "two.sided")
 
 pwr_dat %>%
-  pivot_longer(mean_total:mean_eo, names_to = "Data", values_to = "weekly_mean") %>% 
+  pivot_longer(c(mean_all,mean_eo), names_to = "Data", values_to = "weekly_mean") %>% 
   ggplot(aes(x = week, y = weekly_mean, fill = Data)) +
     geom_bar(stat = "identity", position = "dodge") +
     facet_grid(rows = vars(Data)) +
@@ -1701,9 +1695,9 @@ size_dat_2021 %>%
   filter(unique == "Y") %>% 
   filter(!is.na(length_adj)) %>%
   filter(length_adj > 1) %>% 
-  summarize(mean_surface = mean(length_adj[depth == "surface"]),
-            mean_shallow = mean(length_adj[depth == "shallow"]),
-            mean_deep = mean(length_adj[depth == "deep"]))
+  summarize(mean_surface = mean(length_adj[depth..JP. == "surface"]),
+            mean_shallow = mean(length_adj[depth..JP. == "shallow"]),
+            mean_deep = mean(length_adj[depth..JP. == "deep"]))
 
 #significant difference?
 
@@ -1711,21 +1705,21 @@ depth_aov_dat <- size_dat_2021 %>%
                   filter(unique == "Y") %>%
                   filter(!is.na(length_adj)) %>% 
                   filter(length_adj > 1) %>% 
-                  filter(depth == "surface" | depth == "shallow" | depth == "deep")
+                  filter(depth..JP. == "surface" | depth..JP. == "shallow" | depth..JP. == "deep")
 
 shapiro.test(log(depth_aov_dat$length_adj))
 #def not normal
 
-depth_aov <- aov(log(length_adj) ~ depth, data = depth_aov_dat)
+depth_aov <- aov(log(length_adj) ~ depth..JP., data = depth_aov_dat)
 
 summary(depth_aov)
 plot(depth_aov)
 
 TukeyHSD(depth_aov)
 ```
-*mean sizes not significantly different between depth categories, BUT deep is over a foot bigger on average
+*mean sizes not significantly different between depth categories
 
-### histograms from 2021 of each depth category
+### histograms of each depth category
 ```{r}
 size_dat_2021 %>% 
   filter(depth == "surface") %>%
@@ -1763,11 +1757,35 @@ size_dat_2021 %>%
   pivot_longer(c(length_raw_m, length_adj_m), names_to = "measure", values_to = "length_meters") %>% 
   ggplot(aes(x = length_meters)) +
     geom_histogram(aes(fill = measure), position = "dodge") +
-    facet_wrap(~depth)
+    facet_wrap(~depth..JP.)
 #this stinks
+```
 
-#how do adjustments affect size distribution?
-size_dat_2021 %>% 
+### How do adjustments affect size distribution?
+```{r}
+size_dat_3yr%>% 
+  filter(unique == "Y") %>% 
+  filter(!is.na(length_adj)) %>%
+  filter(length_adj_m > 1) %>%
+  mutate(year = year(as_date(date, format = '%m/%d/%Y'))) %>% 
+  pivot_longer(c(length_raw_m, length_adj_m), names_to = "Measure", values_to = "Length") %>% 
+  ggplot(aes(x = Length)) +
+    geom_histogram(aes(fill = Measure, color = Measure), alpha = 0.6, position = "dodge", binwidth = 0.1) +
+    scale_fill_brewer(palette = "Dark2", labels=c("Adjusted","Unadjusted")) +
+    scale_color_brewer(palette = "Dark2", labels=c("Adjusted","Unadjusted")) +
+    theme_cowplot() +
+    theme(legend.position = "bottom", legend.spacing.x = unit(1, 'cm'),
+          panel.background = element_rect(fill = "white", colour = NA),
+          plot.background = element_rect(fill = "white", colour = NA)) +
+    guides(fill = guide_legend(label.position = "bottom")) +
+    facet_grid(rows = vars(year)) +
+    theme_clean() +
+    #theme(strip.text.y = element_blank()) +
+    labs(x = "Length (m)", y = "Count", fill = "Measure:", color = "Measure:")
+ggsave("plots/3yr_size_adjustment_comp.png", height = 7, width = 4.6)
+
+
+size_dat_2021%>% 
   filter(unique == "Y") %>% 
   filter(!is.na(length_adj)) %>%
   filter(length_adj_m > 1) %>% 
@@ -1801,17 +1819,17 @@ size_dat_2021 %>%
 #average adjustment was an increase of 0.29 meters
 
 #looking at how adjustments affect juvie:adult ratio with the 3m cutoff
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>%
   filter(!is.na(length_adj_m)) %>%
   filter(!is.na(length_raw_m)) %>%
   mutate(class_raw = ifelse(length_raw_m < 3, "Juvenile", "Adult")) %>% 
   mutate(class_adj = ifelse(length_adj_m < 3, "Juvenile", "Adult")) %>% 
   count(class_adj)
-#94 adults and 189 juveniles with raw measurements, 143 adults and 140 juveniles with adjusted measurements - adjustments bring 49 sharks from juvenile to adult length
+#125 adults and 475 juveniles with raw measurements, 219 adults and 381 juveniles with adjusted measurements - adjustments bring 49 sharks from juvenile to adult length
 
 #looking at how adjustments affect shallow sharks (overlapping histograms):
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>%
   filter(depth == "shallow") %>% 
   filter(!is.na(length_adj)) %>% 
@@ -1823,7 +1841,7 @@ size_dat_2021 %>%
 # I actually like this dodged the most, shows how peaks in raw get shifted to the right
 
 # same as above but faceted:
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(depth == "shallow") %>% 
   filter(!is.na(length_adj)) %>% 
   pivot_longer(c(length_raw_m, length_adj_m), names_to = "measure", values_to = "length_meters") %>% 
@@ -1833,37 +1851,51 @@ size_dat_2021 %>%
     scale_fill_brewer(palette = "Dark2")
 # not sure what this really tells me. Overall smoother distribution for the adjusted lengths, which I suppose makes sense. Adjusted lengths are shifted to the right...
 
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>%
   filter(depth == "shallow") %>% 
   filter(!is.na(length_adj_m)) %>% 
   summarize(median_adj = median(length_adj_m), median_raw = median(length_raw_m))
-#by approximately 0.24 meters, or about ten inches
+#by approximately 0.3 meters
 
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>%
   filter(depth == "shallow") %>% 
   filter(!is.na(length_adj_m)) %>%
   mutate(adj_diff = length_adj_m - length_raw_m) %>% 
   summarize(mean_adj_diff = mean(adj_diff))
-#average shallow adjustment was an increase of 0.25 meters
+#average shallow adjustment was an increase of 0.33 meters
 
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>%
   filter(depth == "surface") %>% 
   filter(!is.na(length_adj_m)) %>%
   mutate(adj_diff = length_adj_m - length_raw_m) %>% 
   summarize(mean_adj_diff = mean(adj_diff))
-#average surface adjustment was an increase of 0.14 meters
+#average surface adjustment was an increase of 0.13 meters
 
-size_dat_2021 %>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>%
   filter(depth == "deep") %>% 
   filter(!is.na(length_adj_m)) %>%
   filter(!is.na(length_raw_m)) %>% 
   mutate(adj_diff = length_adj_m - length_raw_m) %>% 
   summarize(mean_adj_diff = mean(adj_diff))
-#average deep adjustment was increase of 0.37 meters
+#average deep adjustment was increase of 0.47 meters
+```
+
+### Size classes
+```{r}
+ggplot(data = daily_3yr_dat, aes(x = juvenile/total_sized)) +
+  geom_histogram()
+
+ggplot(data = daily_3yr_dat, aes(x = date, y = juvenile/total_sized)) +
+  geom_point()
+
+ggplot(data = daily_3yr_dat, aes(x = as.factor(year(date_hour)), y = juvenile/total_sized)) +
+  geom_boxplot()
+
+
 ```
 
 ## Modelling effects of environmental and detection-related variables
@@ -1946,41 +1978,76 @@ ggplot(gam_dat, aes(x = WVHT, y = transect_total)) +
 
 ### transect total GLM, no interactions
 ```{r}
-gam1 <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", k = 10) + s(day, bs = "cc", k = 100) + beaufort + vis + s(tide) + s(Temp_top) + s(WVHT, k = 40) + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+gam1 <- mgcv::gam(transect_total ~ year + 
+                                   s(hour, bs = "cc", k = 10) +
+                                   s(day, bs = "cc", k = 20) +
+                                   beaufort + vis + s(tide, bs = "cr", k = 10) +
+                                   s(Temp_top, bs = "cr", k = 10) +
+                                   s(WVHT, bs = "cr", k = 30) +
+                                   offset(transect_area_km2),
+                                   data = gam_dat,
+                                   method = "REML",
+                                   family = nb,
+                                   na.action = "na.fail")
 #REML used for small dataset (observations in the 100's), to prevent over-smoothing
+#knots from gam2 below
 
 summary(gam1)
 gam.check(gam1)
-# negative binomial fixes qq plot (conforms with temporal GLM)
+#negative binomial fixes qq plot (nb was also best for temporal GLM)
 
 plot.gam(gam1)
 #not sure why day is flat
 
 visreg(gam1)
 
-dredge(gam1)
+anova.gam(gam1)
+#this is analogous to "drop1" function for GLM
+#year, beaufort, hour, and wave height are significant predictors (matches dredge below)
+
+dredge(gam1, m.min = 8)
+#this takes a long time to run, especially if no limits are set on minimum number of terms
+#global model has 9 terms, so m.min = 8 will return every model with just one term missing. Models with beaufort, hour, year, and wave height are all worse than global model, supporting the anova.gam result above and the full dredge result
 #best model is beaufort, hour, waveheight, and year, but top 12 models (6 pairs with/without day) are all within delta of 2
-#models with or without day have the same AIC
+#models with or without day have the same AIC, so something weird is happening
 ```
 
 ### transect total GLM, with year interactions
 ```{r}
-gam2 <- mgcv::gam(transect_total ~ year + s(hour, bs = "cc", by = year) + s(day, bs = "cc", by = year) + beaufort + vis + s(tide, by = year) + s(Temp_top, by = year) + s(WVHT, by = year, k = 40) + offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+gam2 <- mgcv::gam(transect_total ~ year +
+                                   s(hour, bs = "cc", k = 10, by = year) +
+                                   s(day, bs = "cc", k = 20, by = year) + 
+                                   beaufort + vis + s(tide, by = year, k = 10) +
+                                   s(Temp_top, by = year, k = 10) +
+                                   s(WVHT, by = year, k = 30) +
+                                   offset(transect_area_km2), 
+                    data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+#knots hand-selected to be as large as possible without throwing "more coefficients than data" error
 
 summary(gam2)
+#adding year interactions increases deviance explained from 37 to 64 percent
 gam.check(gam2)
-#issues with WVHT (k = 40 is too low)
-plot.gam(gam2)
+#issues with WVHT (k = 30 is too low)
 
+#plot.gam(gam2)
 visreg(gam2)
 
 anova.gam(gam2)
+#year and beaufort significant as parametric terms
 #hour significant in all years but 2019
 #day significant in all years
 #tide n.s.
 #temp n.s.
-#WVHT n.s.
+#WVHT n.s. (only difference from gam1)
 
+dredge(gam2, m.min = 8)
+# dropping hour, day, or year from global model make fit worse
+
+dredge(gam2)
+
+#wald_gam(gam2)
+#report_stats(gam2)
+#plot_diff2(gam2, comp = list(year = c('2019', '2020')), view = c('hour', 'tide'))
 ```
 
 ### comparing interaction and non-interaction models:
@@ -1988,6 +2055,91 @@ anova.gam(gam2)
 AIC(gam1, gam2)
 ```
 
+### interaction model but with month rather than day of year:
+```{r}
+gam3 <- mgcv::gam(transect_total ~ year +
+                                   s(hour, bs = "cc", k = 10, by = year) +
+                                   s(month, bs = "cc", k = 8, by = year) + 
+                                   beaufort + vis + s(tide, by = year, k = 10) +
+                                   s(Temp_top, by = year, k = 10) +
+                                   s(WVHT, by = year, k = 40) +
+                                   offset(transect_area_km2), 
+                    data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+
+summary(gam3)
+#month model explains 60% of deviance compared to 64% for day model
+
+gam.check(gam3)
+#month by year doesn't work
+visreg(gam3)
+
+anova.gam(gam3)
+#year, beaufort, hour, and month significant
+```
+
+### month model with year interaction only for hour and month (as of 4/12 I think this is what I should use)
+```{r}
+gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+
+summary(gam4)
+#60.7% of deviance explained
+#hour, tide, and temp are being modeled as linear (edf close to 1)
+
+gam.check(gam4, rep = 500)
+#low p-value for waveheight and month, but edf not close to k' so it's not a problem with the number of knots (which are set to max anyways)
+
+anova.gam(gam4)
+#year, beaufort, vis, hour, month all significant
+
+visreg(gam4)
+
+dredge(gam4, m.min = 8)
+#dropping area, tide, vis, waveheight, and temp all (marginally) improves fit over global model
+#dropping beaufort, hour, month, and year all significantly worsen fit compared to global model
+
+gam4_full_dredge <- dredge(gam4, m.min = 4)
+```
+
+### month model, no interactions
+```{r}
+gam5 <- mgcv::gam(transect_total ~ year +
+                                   s(hour, bs = "cc", k = 12) +
+                                   s(month, bs = "cc", k = 8) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 20) +
+                                   s(Temp_top, k = 100) +
+                                   s(WVHT, k = 90) +
+                                   offset(transect_area_km2), 
+                    data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+#knots hand-selected to be as large as possible
+
+gam.check(gam5)
+#issue with month
+
+summary(gam5)
+#38.1% of deviance explained
+
+visreg(gam5)
+
+anova.gam(gam5)
+#year, beaufort, hour and wave height significant. Month and tide are being modeled as essentially linear
+
+dredge(gam5, m.min = 8)
+#dropping vis, temp, tide, month, and area all improve fit
+
+gam5_full_dredge <- dredge(gam5, m.min = 3)
+gam5_full_dredge
+#tied-for-best models include beaufort, hour, wave height, and year, +/- month
+```
 
 ===============================================================================
 
