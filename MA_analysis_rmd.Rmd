@@ -64,9 +64,6 @@ library(itsadug)
 dat_2019 <- read.csv("data_raw/2019_flight_data.csv")
 #view(dat_2019)
 
-dat_2019$date[104:107] <- as.character(c(
-  "10/25/2019", "10/28/2019", "10/30/2019", "11/4/2019"))
-
 dat_2019 <- dat_2019 %>% 
   dplyr::select(!c(3:9,13,14,16:17,20,21,23:25,28,29)) %>% 
   mutate(total_unique = transect_total) %>% 
@@ -112,7 +109,7 @@ tide_dat_2019 <- tide_dat_2019 %>%
   rename(tide = 2)
 
 dat_2019 <- left_join(dat_2019, tide_dat_2019, by = "date_hour")
-#View(dat_2019)
+#view(dat_2019)
 ```
 
 ### Reading in channel buoy data (Station 46053) - 2019
@@ -124,7 +121,7 @@ channel_dat_2019_raw <- read.table("data_raw/2019_buoy_dat.txt", header = FALSE,
                                                  "ATMP","WTMP","DEWP","VIS",
                                                  "TIDE"))
 #str(channel_dat_2019_raw)
-#View(channel_dat_2019_raw)e
+#View(channel_dat_2019_raw)
 
 channel_dat_2019 <- channel_dat_2019_raw %>%
                       mutate_if(is.character, as.numeric) %>% 
@@ -138,18 +135,23 @@ channel_dat_2019 <- channel_dat_2019_raw %>%
                       mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
                       mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
                       mutate(date_hour = round_date(datetime, "hour")) %>% 
+                      select(!datetime) %>% 
+                      select(!c(1:4)) %>% 
                       mutate(max_wtemp_previous_24 = 
                               slide_dbl(WTMP, max, .before = 24)) %>% 
                       mutate(min_wtemp_previous_24 = 
                               slide_dbl(WTMP, min, .before = 24)) %>% 
                       mutate(mean_wtemp_previous_24 = 
                               slide_dbl(WTMP, mean, .before = 24))
+view(channel_dat_2019)
 
-dat_2019$date_hour <- as_datetime(dat_2019$date_hour)
+#dat_2019$date_hour <- as_datetime(dat_2019$date_hour)
 flights_plus_channel_dat_2019 <- left_join(dat_2019, channel_dat_2019, by = "date_hour")
 
 dat_2019 <- flights_plus_channel_dat_2019 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2)
+
+#view(dat_2019)
 ```
 
 ### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2019 (as of 4/9 planning on replacing this with CSULB or LTER data)
@@ -202,7 +204,7 @@ size_dat_2019 %>%
 ### Flight-Level Data Tidying - 2020
 ```{r}
 dat_2020 <- read.csv("data_raw/2020_flight_data.csv")
-#View(dat_2020)
+#view(dat_2020)
 
 #dat_2020$date <- as_date(as.Date(dat_2020$date, "%m/%d/%Y"))
 
@@ -243,7 +245,7 @@ dat_2020 <- dat_2020 %>%
 ```{r}
 tide_dat_2020 <- read.csv("data_raw/2020_tide_dat.txt")
 #View(tide_dat_2020)
-str(tide_dat_2020)
+#str(tide_dat_2020)
 
 tide_dat_2020 <- tide_dat_2020 %>% 
   rename(time = 2) %>% 
@@ -256,7 +258,7 @@ tide_dat_2020 <- tide_dat_2020 %>%
   rename(tide = 2)
 
 tide_added_2020 <- left_join(dat_2020, tide_dat_2020, by = "date_hour")
-#View(tide_added_2020)
+#view(tide_added_2020)
 ```
 
 ### Reading in channel buoy data (Station 46053) - 2020
@@ -282,18 +284,19 @@ channel_dat_2020 <- channel_dat_2020_raw %>%
   mutate(datetime = make_datetime(year, MM, DD, hh)) %>% 
   mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
   mutate(date_hour = round_date(datetime, "hour")) %>% 
+  select(!datetime) %>% 
+  select(!c(1:4)) %>%
   mutate(max_wtemp_previous_24 = slide_dbl(WTMP, max, .before = 24)) %>% 
   mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
   mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
 
-tide_added_2020$date_hour <- as_datetime(tide_added_2020$date_hour)
+#tide_added_2020$date_hour <- as_datetime(tide_added_2020$date_hour)
 flights_plus_channel_dat_2020 <- left_join(tide_added_2020, channel_dat_2020, by = "date_hour")
-#View(flights_plus_channel_dat_2020)
+#view(flights_plus_channel_dat_2020)
 
 dat_2020 <- flights_plus_channel_dat_2020 %>%
-  mutate(wtemp_2 = mean_wtemp_previous_24^2) %>% 
-  select(-c(31,32))
-#View(dat_2020)
+  mutate(wtemp_2 = mean_wtemp_previous_24^2) 
+#view(dat_2020)
 ```
 
 ### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2020 (as of 4/9 planning on replacing this with CSULB or LTER data)
@@ -415,7 +418,7 @@ tide_dat_2021 <- tide_dat_2021 %>%
   rename(tide = 2)
 
 dat_2021 <- left_join(dat_2021, tide_dat_2021, by = "date_hour")
-#View(dat_2021)
+#view(dat_2021)
 ```
 
 ### Reading in channel buoy data (Station 46053) - 2021
@@ -518,19 +521,19 @@ channel_dat_2021 <- channel_dat_2021_raw %>%
   add_column(year = 2021, .before = 1) %>% 
   mutate(date_hour = make_datetime(year, MM, DD, hh)) %>% 
   mutate(date_hour = with_tz(date_hour, "US/Pacific")) %>%
+  select(!c(1:4)) %>%
   mutate(max_wtemp_previous_24 = slide_dbl(WTMP, max, .before = 24)) %>% 
   mutate(min_wtemp_previous_24 = slide_dbl(WTMP, min, .before = 24)) %>% 
   mutate(mean_wtemp_previous_24 = slide_dbl(WTMP, mean, .before = 24))
 #View(channel_dat_2021)
 
-dat_2021$date_hour <- as_datetime(dat_2021$date_hour)
+#dat_2021$date_hour <- as_datetime(dat_2021$date_hour)
 flights_plus_channel_dat_2021 <- left_join(dat_2021, channel_dat_2021, by = "date_hour")
 #View(flights_plus_channel_dat_2021)
 
 dat_2021 <- flights_plus_channel_dat_2021 %>%
-  mutate(wtemp_2 = mean_wtemp_previous_24^2) %>% 
-  select(-c(31,32))
-#View(dat_2021)
+  mutate(wtemp_2 = mean_wtemp_previous_24^2) 
+#view(dat_2021)
 ```
 
 ### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2021 (as of 4/9 planning on replacing this with CSULB or LTER data)
@@ -606,8 +609,7 @@ daily_3yr_dat <- full_join(daily_2yr_dat, dat_2021)
 ### Tidying 3-year data
 ```{r}
 daily_3yr_dat <- daily_3yr_dat %>%
-  #rename(datetime = datetime.x) %>% 
-  mutate(year = as_factor(year(datetime))) %>% 
+  mutate(year = as_factor(year(mdy(date)))) %>% 
   mutate(day = yday(datetime)) %>% 
   mutate(day2 = (yday(datetime))^2)
 ```
@@ -623,16 +625,18 @@ lter_dat <- lter_dat %>%
   filter(row_number() %% 3 == 1) %>% 
   mutate(hour = round(hour, digits = 1)) %>% 
   mutate(date_hour = make_datetime(year, month, day, hour)) %>% 
-  mutate(year = as.factor(year)) %>% 
   rename(day_of_month = day) %>% 
-  select(-c(1, 6:53, 58:75))
+  select(-c(1, 6:53, 58:75)) %>% 
+  select(!year)
 ```
 
 ### Adding LTER data to daily 3yr dataset 
 ```{r}
-daily_3yr_dat <- left_join(daily_3yr_dat, lter_dat, by = "date_hour")
+daily_3yr_dat_1 <- left_join(daily_3yr_dat, lter_dat, by = "date_hour")
+#view(daily_3yr_dat_1)
 
-write.csv(daily_3yr_dat, "daily_3yr_dat.csv")
+daily_3yr_dat <- select(daily_3yr_dat_1, -c(49,50,56,73))
+write.csv(daily_3yr_dat, "data/daily_3yr_dat.csv")
 ```
 
 ## Building 3yr size dataset
@@ -672,18 +676,19 @@ size_classed_3yr <- joined_3yr %>%
   dplyr::summarize(juvenile = sum(length_adj_m < 3), 
                    adult = sum(length_adj_m >= 3)) 
 
-view(size_classed_3yr)
+#view(size_classed_3yr)
 
 ggplot(data = size_classed_3yr, aes(x = adult)) +
   geom_bar()
-#crazy outlier on 4/30/2021
 
 daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
 
 daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(juvenile = ifelse(is.na(juvenile), 0, juvenile)) %>% 
   mutate(adult = ifelse(is.na(adult), 0, adult)) %>% 
-  mutate(total_sized = juvenile + adult)
+  mutate(total_sized = juvenile + adult) %>% 
+  filter(detection == "Y" | detection == "N")
+#view(daily_3yr_dat)
 ```
 
 ## DO NOT RUN: Adding wharf data - not sure why I ever needed this?
@@ -710,14 +715,113 @@ daily_3yr_dat <- daily_3yr_dat %>%
 ## Dataframe without 2019
 ```{r}
 dat_no_19 <- daily_3yr_dat %>% 
-  filter(year(date_hour) != 2019)
+  filter(year != 2019)
 ```
 
 =============================================================================
 
 # Analyses for Thesis
 
-## Rudimentary power analysis - do weekly averages change when only half of the data is used?
+## Summary statistics
+```{r}
+nrow(daily_3yr_dat)
+#351 total survey days
+
+daily_3yr_dat %>% 
+  filter(year == 2019) %>% 
+  slice(-c(2:(n()-1)))
+#2019 started on 5/30 and ended on 12/6:
+as.period(mdy("5/30/2019") %--% mdy("12/6/2019"), "days")
+#2019 field season was 190 days long
+190/7 #roughly 27 weeks
+98/(190/7) #3.6 surveys/week
+
+daily_3yr_dat %>% 
+  filter(year == 2020) %>% 
+  slice(-c(2:(n()-1)))
+#2020 started on 6/24 and ended on 12/11:
+as.period(mdy("6/24/2020") %--% mdy("12/11/2020"), "days")
+#2020 field season was 170 days long
+170/7 #roughly 24 weeks
+113/(170/7) #4.7 surveys/week
+
+daily_3yr_dat %>% 
+  filter(year == 2021) %>% 
+  slice(-c(2:(n()-1)))
+#2021 started on 4/20 and ended on 12/18:
+as.period(mdy("4/20/2021") %--% mdy("12/18/2021"), "days")
+#2021 field season was 242 days long
+242/7 #roughly 35 weeks
+140/(242/7) #4.0 surveys/week
+  
+sum(daily_3yr_dat$total_unique, na.rm = TRUE)
+#912 total sightings
+
+daily_3yr_dat %>% 
+  group_by(year) %>% 
+  summarize(surveys = n(), total_sightings = sum(total_unique, na.rm = TRUE), mean_count = mean(total_unique, na.rm = TRUE))
+#2019:     98 surveys, 44 total sharks, 0.449 sharks/survey
+#2020:    113          271              2.42 
+#2021:    140          597              4.36 
+
+year_aov <- aov(total_unique ~ year, data = daily_3yr_dat)
+summary(year_aov)
+TukeyHSD(year_aov)
+
+daily_3yr_dat %>%
+  filter(year == 2019) %>% 
+  summarize(mean_area = mean(transect_area_km2), mean_duration = mean(transect_duration_min))
+
+daily_3yr_dat %>%
+  filter(year != 2019) %>% 
+  summarize(trans_area = mean(transect_area_km2, na.rm = TRUE), trans_duration = mean(transect_duration_min, na.rm = TRUE), man_area = mean(manual_area_km2, na.rm = TRUE), man_duration = mean(manual_duration_min, na.rm = TRUE))
+
+daily_3yr_dat %>% 
+  filter(total_unique > 0) %>% 
+  nrow()
+#203 days w/ at least one shark
+203/351
+
+daily_3yr_dat %>% 
+  filter(total_unique > 0) %>% 
+  filter(year == 2019) %>% 
+  nrow()
+#17 detection days in 2019
+17/98
+
+daily_3yr_dat %>% 
+  filter(total_unique > 0) %>% 
+  filter(year == 2020) %>% 
+  nrow()
+#70 detection days in 2020
+70/113
+
+daily_3yr_dat %>% 
+  filter(total_unique > 0) %>% 
+  filter(year == 2021) %>% 
+  nrow()
+#116 detection days in 2021
+116/140
+
+chisq.test(daily_3yr_dat$year, daily_3yr_dat$detection)
+
+daily_3yr_dat %>% 
+  filter(year == 2019) %>% 
+  summarize(max = max(total_unique))
+# max 6
+
+daily_3yr_dat %>% 
+  filter(year == 2020) %>% 
+  summarize(max = max(total_unique, na.rm = TRUE))
+# max 12
+
+daily_3yr_dat %>% 
+  filter(year == 2021) %>% 
+  summarize(max = max(total_unique, na.rm = TRUE))
+#max 15
+```
+
+## Rudimentary power/sensitivity analysis - do weekly averages change when only half of the data is used?
 ```{r}
 pwr_dat <- dat_2021 %>% 
   select(datetime, total_unique) %>% 
@@ -787,7 +891,7 @@ ggplot(daily_3yr_dat, aes(x = manual_unique)) +
 t_vs_m.lm <- lm(transect_total ~ manual_unique, data = dat_no_19)
 summary(t_vs_m.lm)
 #slope = 0.60 - one shark sighted in manual = 0.6 sharks sighted in transect
-#r2 = 0.2792
+#r2 = 0.2797
 
 ggplot(dat_no_19, aes(x = manual_unique, y = total_unique)) +
   geom_jitter() +
@@ -1892,10 +1996,23 @@ ggplot(data = daily_3yr_dat, aes(x = juvenile/total_sized)) +
 ggplot(data = daily_3yr_dat, aes(x = date, y = juvenile/total_sized)) +
   geom_point()
 
-ggplot(data = daily_3yr_dat, aes(x = as.factor(year(date_hour)), y = juvenile/total_sized)) +
-  geom_boxplot()
+daily_3yr_dat %>% 
+  filter(total_sized != 0) %>% 
+  ggplot(aes(x = year, y = juvenile/total_sized)) +
+    geom_boxplot()
+#not sure why 2020 looks weird 
 
+daily_3yr_dat %>% 
+  filter(total_sized != 0) %>% 
+  filter(year == "2020") %>% 
+  ggplot(aes(x = juvenile/total_sized)) +
+    geom_bar()
 
+daily_3yr_dat %>% 
+  filter(total_sized != 0) %>% 
+  ggplot(aes(x = juvenile/total_sized, fill = year)) +
+    geom_histogram(position = "dodge", bins = 10)
+#2021 has a LOT more days where there were only adult-sized sharks, and 2020 has tons of days where only juvenile-sized sharks were seen
 ```
 
 ## Modelling effects of environmental and detection-related variables
@@ -1903,7 +2020,6 @@ ggplot(data = daily_3yr_dat, aes(x = as.factor(year(date_hour)), y = juvenile/to
 ### Build the dataset to be used in the GAM
 ```{r}
 gam_dat <- daily_3yr_dat %>% 
-  rename(year = year.x) %>% 
   filter(!is.na(transect_total)) %>%
   filter(!is.na(transect_area_km2)) %>% 
   filter(!is.na(year)) %>% 
@@ -1921,7 +2037,7 @@ gam_dat <- daily_3yr_dat %>%
   filter(!is.na(tide)) %>% 
   mutate(presence = ifelse(total_unique > 0, 1, 0))
 
-view(gam_dat)
+#view(gam_dat)
 #idk how to get rid of NAs and "NA"s
 ```
 
@@ -1947,7 +2063,8 @@ ggplot(gam_dat, aes(x = as.numeric(vis), y = transect_total)) +
 ```{r}
 ggplot(gam_dat, aes(x = Temp_top, y = transect_total)) + 
   geom_jitter() +
-  geom_smooth()
+  geom_smooth() + 
+  facet_grid(year~.)
 
 ggplot(gam_dat, aes(x = Temp_top, y = total_unique)) + 
   geom_jitter() +
@@ -1976,12 +2093,13 @@ ggplot(gam_dat, aes(x = WVHT, y = transect_total)) +
 ```
 *not much going on with either of these
 
-### transect total GLM, no interactions
+### transect total GAM, no interactions
 ```{r}
 gam1 <- mgcv::gam(transect_total ~ year + 
                                    s(hour, bs = "cc", k = 10) +
                                    s(day, bs = "cc", k = 20) +
-                                   beaufort + vis + s(tide, bs = "cr", k = 10) +
+                                   beaufort + vis + 
+                                   s(tide, bs = "cr", k = 10) +
                                    s(Temp_top, bs = "cr", k = 10) +
                                    s(WVHT, bs = "cr", k = 30) +
                                    offset(transect_area_km2),
@@ -1993,6 +2111,8 @@ gam1 <- mgcv::gam(transect_total ~ year +
 #knots from gam2 below
 
 summary(gam1)
+# 37% of deviance explained
+
 gam.check(gam1)
 #negative binomial fixes qq plot (nb was also best for temporal GLM)
 
@@ -2012,7 +2132,7 @@ dredge(gam1, m.min = 8)
 #models with or without day have the same AIC, so something weird is happening
 ```
 
-### transect total GLM, with year interactions
+### transect total GAM, with year interactions
 ```{r}
 gam2 <- mgcv::gam(transect_total ~ year +
                                    s(hour, bs = "cc", k = 10, by = year) +
@@ -2022,10 +2142,11 @@ gam2 <- mgcv::gam(transect_total ~ year +
                                    s(WVHT, by = year, k = 30) +
                                    offset(transect_area_km2), 
                     data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
-#knots hand-selected to be as large as possible without throwing "more coefficients than data" error
+#knots hand-selected to be as large as possible without throwing 
+#"more coefficients than data" error
 
 summary(gam2)
-#adding year interactions increases deviance explained from 37 to 64 percent
+#adding year interactions increases deviance explained from 37 to 64.3 percent
 gam.check(gam2)
 #issues with WVHT (k = 30 is too low)
 
@@ -2050,11 +2171,6 @@ dredge(gam2)
 #plot_diff2(gam2, comp = list(year = c('2019', '2020')), view = c('hour', 'tide'))
 ```
 
-### comparing interaction and non-interaction models:
-```{r}
-AIC(gam1, gam2)
-```
-
 ### interaction model but with month rather than day of year:
 ```{r}
 gam3 <- mgcv::gam(transect_total ~ year +
@@ -2067,7 +2183,7 @@ gam3 <- mgcv::gam(transect_total ~ year +
                     data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
 
 summary(gam3)
-#month model explains 60% of deviance compared to 64% for day model
+#month model explains 60.4% of deviance compared to 64% for day model
 
 gam.check(gam3)
 #month by year doesn't work
@@ -2077,7 +2193,7 @@ anova.gam(gam3)
 #year, beaufort, hour, and month significant
 ```
 
-### month model with year interaction only for hour and month (as of 4/12 I think this is what I should use)
+### month model with year interaction only for hour and month
 ```{r}
 gam4 <- mgcv::gam(transect_total ~ year +
                                    s(hour, k = 10, by = year) +
@@ -2087,25 +2203,33 @@ gam4 <- mgcv::gam(transect_total ~ year +
                                    s(tide, k = 10) +
                                    s(Temp_top, k = 10) +
                                    s(WVHT, k = 50) +
-                                   offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+#select = TRUE does automated term selection to remove terms that are "infinitely smooth"
 
 summary(gam4)
-#60.7% of deviance explained
+#60.7% of deviance explained - removing year interactions from envt'l terms improved fit
 #hour, tide, and temp are being modeled as linear (edf close to 1)
 
 gam.check(gam4, rep = 500)
 #low p-value for waveheight and month, but edf not close to k' so it's not a problem with the number of knots (which are set to max anyways)
 
 anova.gam(gam4)
+#p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
 #year, beaufort, vis, hour, month all significant
 
 visreg(gam4)
 
-dredge(gam4, m.min = 8)
-#dropping area, tide, vis, waveheight, and temp all (marginally) improves fit over global model
+gam4_dredge_drop1 <- dredge(gam4, m.min = 8, fixed = "offset(transect_area_km2)")
+gam4_dredge_drop1
+#dropping tide, vis, waveheight, and temp all (marginally) improves fit over global model
 #dropping beaufort, hour, month, and year all significantly worsen fit compared to global model
 
-gam4_full_dredge <- dredge(gam4, m.min = 4)
+gam4_full_dredge <- dredge(gam4, m.min = 3, fixed = "offset(transect_area_km2)")
+gam4_full_dredge
+
+gam4_top3_dredge <- dredge(gam4, m.max = 4, fixed = "offset(transect_area_km2)")
+gam4_top3_dredge
 ```
 
 ### month model, no interactions
@@ -2126,7 +2250,7 @@ gam.check(gam5)
 #issue with month
 
 summary(gam5)
-#38.1% of deviance explained
+#only 38.1% of deviance explained
 
 visreg(gam5)
 
@@ -2139,6 +2263,92 @@ dredge(gam5, m.min = 8)
 gam5_full_dredge <- dredge(gam5, m.min = 3)
 gam5_full_dredge
 #tied-for-best models include beaufort, hour, wave height, and year, +/- month
+```
+
+### day model, year interactions with hour and day (like gam4 but with day, this is probably the best option)
+```{r}
+gam6 <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) +
+                                   s(day, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+
+summary(gam6)
+#61.2% of deviance explained
+#hour and tide are being modeled as linear (edf close to 1)
+
+gam.check(gam6, rep = 500)
+#low p-value for waveheight and month, but edf not close to k' so it's not a problem with the number of knots (which are set to max anyways)
+
+anova.gam(gam6)
+#year, beaufort, hour, and day are significant
+
+visreg(gam6)
+visreg_data <- visreg(gam6)
+
+fits <- as.data.frame(visreg_data[[3]][["fit"]][["visregFit"]])
+days <- as.data.frame(visreg_data[[3]][["fit"]][["day"]])
+
+gam6_day_fits <- bind_cols(fits, days)
+#main peak is day 202 (July 21), secondary peak at day 124 (May 4), and minimum is day 275 (October 2)
+
+#wald_gam(gam6, comp=list(beaufort=levels(gam_dat$beaufort), year=c("2019", "2020", "2021")))
+#is this comparing for all years or just 2021?
+
+gam6_year_emms <- emmeans(gam6, "year")
+pwpm(gam6_year_emms, type = "response")
+#2020 NOT sig. diff. from 2021 when all other factors are taken into account - but weird that 2020 estimates are higher:
+
+ggplot(data = gam_dat, aes(x = year, y = transect_total/transect_area_km2)) +
+  geom_boxplot()
+
+gam6_beaufort_emms <- emmeans(gam6, "beaufort")
+pwpm(gam6_beaufort_emms, type = "response")
+#levels of beaufort not sig. diff. from each other even though beaufort is a significant parametric term?
+
+#gam6_drop1_dredge <- dredge(gam6, m.min = 8)
+gam6_drop1_dredge
+#best 8-term model is the one without vis
+
+#gam6_full_dredge <- dredge(gam6, m.min = 3, fixed = "offset(transect_area_km2)")
+gam6_full_dredge
+```
+
+### comparing global models:
+```{r}
+MuMIn::AICc(gam1, gam2, gam3, gam4, gam5, gam6) 
+# corrected AIC for small sample size
+
+summary(gam4) #DE = 60.7%
+summary(gam6) #DE = 61.2%
+
+```
+*gam4 and gam6 (year interaction with hour and month/day only) have lowest AIC and highest deviance explained. Differences in AIC and DE are marginal, so I should choose whichever does a better job of answering my questions
+
+### Modelling proportion of juveniles
+```{r}
+propgam1 <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) +
+                                   s(day, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized), data = gam_dat, method = "REML", family = nb, na.action = "na.fail")
+
+summary(propgam1)
+# only 10.3% of deviance explained. basically everything is being modelled as a flat line
+
+gam.check(propgam1)
+
+visreg(propgam1)
+
+anova(propgam1)
 ```
 
 ===============================================================================
