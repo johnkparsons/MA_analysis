@@ -2262,6 +2262,7 @@ anova.gam(gam4)
 #tide, temp, and wave height n.s.
 
 visreg(gam4)
+plot(gam4)
 
 gam4_dredge_drop1 <- dredge(gam4, m.min = 8, fixed = "offset(transect_area_km2)")
 gam4_dredge_drop1
@@ -2303,6 +2304,116 @@ pwpm(gam4_vis_emms, type = "response")
 #2 significantly lower than 4 (ratio = 0.462, p = 0.0279)
 
 concurvity(gam4, full = FALSE)
+```
+
+### determining deviance explained of each term by dropping it from the global gam4 model
+```{r}
+summary(gam4)
+#global model explains 60.7% of deviance
+
+gam4year <- mgcv::gam(transect_total ~ s(hour, k = 10, by = year) +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4year)
+60.7 - 50.6
+#year DE = 10.1%
+
+gam4hour <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4hour)
+60.7 - 50.2
+#hour DE = 10.5%
+
+gam4month <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4month)
+60.7 - 41.6
+#month DE = 19.1%
+
+gam4beau <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4beau)
+60.7 - 53
+#beaufort DE = 7.7%
+
+gam4vis <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4vis)
+60.7 - 55.6
+#vis DE = 5.1%
+
+gam4tide <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4tide)
+60.7 - 57.8
+#tide DE = 2.9%
+
+gam4temp <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4temp)
+60.7 - 56.2
+#temp DE = 4.5%
+
+gam4wvht <- mgcv::gam(transect_total ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   offset(transect_area_km2),
+                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(gam4wvht)
+60.7 - 56.7
+#wvht DE = 4.0%
 ```
 
 ### month model, no interactions
