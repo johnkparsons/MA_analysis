@@ -2519,7 +2519,7 @@ summary(gam6) #DE = 61.2%
 
 ### Build the dataset
 ```{r}
-prop_dat<- daily_3yr_dat %>%
+prop_dat <- daily_3yr_dat %>%
   filter(!is.na(juvenile)) %>% 
   filter(!is.na(total_sized)) %>%
   filter(total_sized > 0) %>% 
@@ -2547,23 +2547,13 @@ ggplot(prop_dat, aes(x = as.numeric(vis), y = juvenile/total_sized)) +
   geom_point() +
   geom_smooth()
 
-ggplot(gam_dat, aes(x = Temp_top, y = juvenile/total_sized)) + 
+ggplot(prop_dat, aes(x = Temp_top, y = juvenile/total_sized)) + 
   geom_jitter() +
   geom_smooth() + 
   facet_grid(year~.)
-
-ggplot(gam_dat, aes(x = Temp_top, y = juvenile/total_sized)) + 
-  geom_jitter() +
-  geom_smooth(method = "lm")
-
-prop_aov <- aov((juvenile/total_sized) ~ year, data = prop_dat)
-summary(prop_aov)
-plot(prop_aov)
-
-TukeyHSD(prop_aov)
-#2021 significantly higher than 2020
 ```
 
+### Modelling proportion of juveniles
 ```{r}
 propgam1 <- mgcv::gam(juvenile ~ year +
                                  s(hour, k = 10, by = year) +
@@ -2578,7 +2568,7 @@ propgam1 <- mgcv::gam(juvenile ~ year +
                                  na.action = "na.fail", select = TRUE)
 
 summary(propgam1)
-# only 7.15 % of deviance explained. basically everything is being modelled as a flat line
+# only 11.9 % of deviance explained. almost everything is being modelled as a flat line
 
 gam.check(propgam1)
 #all good
@@ -2586,15 +2576,501 @@ gam.check(propgam1)
 visreg(propgam1)
 
 anova(propgam1)
+#month in 2021 is significant, hour in 2021 is marginal (p = 0.555)
 
-propgam1_dredge_drop_1 <- dredge(propgam1, m.min = 8, fixed = "offset(total_sized)")
+#propgam1_dredge_drop_1 <- dredge(propgam1, m.min = 8, fixed = "offset(total_sized)")
 propgam1_dredge_drop_1
-#vis hurts the model the most
-#worst term to remove is month, followed by wave height and then tide
 
-propgam1_dredge_full <- dredge(propgam1, m.min = 3, fixed = "offset(total_sized)")
+#propgam1_dredge_full <- dredge(propgam1, m.min = 3, fixed = "offset(total_sized)")
 propgam1_dredge_full
 ```
+
+### determining deviance explained of each term by dropping it from the global model
+```{r}
+summary(propgam1)
+#global model explains 11.9% of deviance
+
+propgam1year <- mgcv::gam(juvenile ~ s(hour, k = 10, by = year) +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1year)
+11.9 - 10.6
+#year DE = 1.3%
+
+propgam1hour <- mgcv::gam(juvenile ~ year +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1hour)
+11.9 - 8.36
+#hour DE = 3.54% (not sure why it gave me an extra decimal place here)
+
+propgam1month <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1month)
+11.9 - 8.62
+#month DE = 3.28%
+
+propgam1beau <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1beau)
+11.9 - 12.1
+#beaufort DE = -0.2 !?!?!?!
+
+propgam1vis <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1vis)
+11.9 - 11.8
+#vis DE = 0.1%
+
+propgam1tide <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1tide)
+11.9 - 10.9
+#tide DE = 1.0%
+
+propgam1temp <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1temp)
+11.9 - 11.9
+#temp DE = 0%
+
+propgam1wvht <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   offset(total_sized),
+                  data = prop_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(propgam1wvht)
+11.9 - 11.9
+#wvht DE = 0%
+```
+
+## Modelling density of juveniles
+
+### Building the dataset
+```{r}
+juv_dat <- daily_3yr_dat %>%
+  filter(!is.na(total_area)) %>% 
+  filter(!is.na(juvenile)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>% 
+  filter(!is.na(day)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  filter(!is.na(vis)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(tide))
+
+juv_dat0 <- daily_3yr_dat %>%
+  filter(!is.na(total_area)) %>% 
+  filter(!is.na(juvenile)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(month = as.factor(month)) %>% 
+  filter(!is.na(day)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  filter(!is.na(vis)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(tide))
+```
+
+### Examine relationships
+```{r}
+ggplot(juv_dat, aes(x = as.numeric(beaufort), y = juvenile)) + 
+  geom_point() +
+  geom_smooth()
+
+ggplot(juv_dat, aes(x = as.numeric(vis), y = juvenile)) +
+  geom_point() +
+  geom_smooth()
+
+ggplot(juv_dat, aes(x = Temp_top, y = juvenile)) + 
+  geom_jitter() +
+  geom_smooth() + 
+  facet_grid(year~.)
+```
+
+### Modelling density of juveniles
+```{r}
+juvgam0 <- mgcv::gam(juvenile ~ year +
+                                month +
+                                 s(hour, k = 10, by = year) +
+                                 beaufort +
+                                 vis +
+                                 s(tide, k = 10) +
+                                 s(Temp_top, k = 10) +
+                                 s(WVHT, k = 50) +
+                                 offset(total_area), data = juv_dat0,
+                                 method = "REML", family = nb,
+                                 na.action = "na.fail", select = TRUE)
+summary(juvgam0)
+anova(juvgam0)
+
+juvgam1 <- mgcv::gam(juvenile ~ year +
+                                 s(hour, k = 10, by = year) +
+                                 s(month, k = 8, by = year) + 
+                                 beaufort +
+                                 vis +
+                                 s(tide, k = 10) +
+                                 s(Temp_top, k = 10) +
+                                 s(WVHT, k = 50) +
+                                 offset(total_area), data = juv_dat,
+                                 method = "REML", family = nb,
+                                 na.action = "na.fail", select = TRUE)
+
+summary(juvgam1)
+# 30.2% of deviance explained
+
+gam.check(juvgam1)
+#issues with month
+
+visreg(juvgam1)
+
+anova(juvgam1)
+#year, month in 2019 and 2020, along with temperature (!) are significant
+
+#juvgam1_dredge_drop_1 <- dredge(juvgam1, m.min = 8, fixed = "offset(total_sized)")
+juvgam1_dredge_drop_1
+
+#juvgam1_dredge_full <- dredge(juvgam1, m.min = 3, fixed = "offset(total_sized)")
+juvgam1_dredge_full
+
+juv_year_emms <- emmeans(juvgam1, "year")
+pwpm(juv_year_emms, type = "response")
+```
+
+### determining deviance explained of each term by dropping it from the global model
+```{r}
+summary(juvgam1)
+#global model explains 30.2% of deviance
+
+juvgam1year <- mgcv::gam(juvenile ~ s(hour, k = 10, by = year) +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1year)
+30.2 - 24
+#year DE = 6.2%
+
+juvgam1hour <- mgcv::gam(juvenile ~ year +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1hour)
+30.2 - 28.2
+#hour DE = 2.0%
+
+juvgam1month <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1month)
+30.2 - 21.8
+#month DE = 8.4
+
+juvgam1beau <- mgcv::gam(juvenile ~ year +
+                                    s(hour, k = 10, by = year) + 
+                                    s(month, k = 8, by = year) +
+                                    vis +
+                                    s(tide, k = 10) +
+                                    s(Temp_top, k = 10) +
+                                    s(WVHT, k = 50) +
+                                    offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1beau)
+30.2 - 28.2
+#beaufort DE = 2.0
+
+juvgam1vis <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   s(month, k = 8, by = year) +
+                                   beaufort +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1vis)
+30.2 - 28.3
+#vis DE = 1.9%
+
+juvgam1tide <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1tide)
+30.2 - 30.2
+#tide DE = 0%
+
+juvgam1temp <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1temp)
+30.2 - 25.4
+#temp DE = 4.8%
+
+juvgam1wvht <- mgcv::gam(juvenile ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   offset(total_area),
+                  data = juv_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(juvgam1wvht)
+30.2 - 30.2
+#wvht DE = 0%
+```
+
+## Modelling density of adults
+
+### Building the dataset
+```{r}
+ad_dat <- daily_3yr_dat %>%
+  filter(!is.na(total_area)) %>% 
+  filter(!is.na(adult)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>% 
+  filter(!is.na(day)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  filter(!is.na(vis)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(tide))
+```
+
+### Modelling density of adults
+```{r}
+adgam1 <- mgcv::gam(adult ~ year +
+                                 s(hour, k = 10, by = year) +
+                                 s(month, k = 8, by = year) + 
+                                 beaufort +
+                                 vis +
+                                 s(tide, k = 10) +
+                                 s(Temp_top, k = 10) +
+                                 s(WVHT, k = 50) +
+                                 offset(total_area), data = ad_dat,
+                                 method = "REML", family = nb,
+                                 na.action = "na.fail", select = TRUE)
+
+summary(adgam1)
+
+gam.check(adgam1)
+
+visreg(adgam1)
+
+anova(adgam1)
+#year, hour, tide, and temp significant
+
+#adgam1_dredge_drop_1 <- dredge(adgam1, m.min = 8, fixed = "offset(total_sized)")
+adgam1_dredge_drop_1
+
+#adgam1_dredge_full <- dredge(adgam1, m.min = 3, fixed = "offset(total_sized)")
+adgam1_dredge_full
+```
+
+
+### determining deviance explained of each term by dropping it from the global model
+```{r}
+summary(adgam1)
+#global model explains 41.5% of deviance
+
+adgam1year <- mgcv::gam(adult ~ s(hour, k = 10, by = year) +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1year)
+41.5 - 36.8
+#year DE = 4.7%
+
+adgam1hour <- mgcv::gam(adult ~ year +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1hour)
+41.5 - 35
+#hour DE = 6.5
+
+adgam1month <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1month)
+41.5 - 36.7
+#month DE = 4.8%
+
+adgam1beau <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1beau)
+41.5 - 41
+#beaufort DE = 0.5
+
+adgam1vis <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1vis)
+41.5 - 38.3
+#vis DE = 3.2
+
+adgam1tide <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1tide)
+41.5 - 37.2
+#tide DE = 4.3%
+
+adgam1temp <- mgcv::gam(adult ~ year +
+                                s(hour, k = 10, by = year) + 
+                                s(month, k = 8, by = year) +
+                                beaufort +
+                                vis+
+                                s(tide, k = 10) +
+                                s(WVHT, k = 50) +
+                                offset(total_area),
+                              data = ad_dat, method = "REML", family = nb,
+                              na.action = "na.fail", select = TRUE)
+summary(adgam1temp)
+41.5 - 40.8
+#temp DE = 0.7
+
+adgam1wvht <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                         s(month, k = 8, by = year) +
+                                   beaufort +
+                       vis+
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   offset(total_area),
+                  data = ad_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam1wvht)
+41.5 - 41.5
+#wvht DE = 0%
+```
+
 
 ===============================================================================
 
