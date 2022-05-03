@@ -601,7 +601,7 @@ daily_3yr_dat <- daily_3yr_dat %>%
   mutate(day2 = (yday(datetime))^2)
 ```
 
-### Reading in LTER data
+### Reading in Carp LTER data
 ```{r}
 lter_dat <- read.csv("data_raw/lter_dat.csv")
 
@@ -681,25 +681,48 @@ daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(total_area = ifelse(year == 2019, transect_area_km2, transect_area_km2 + manual_area_km2))
 ```
 
-## DO NOT RUN: Adding wharf data - not sure why I ever needed this?
+## Adding Scripps pier data
 ```{r}
-wharf_dat <- read.csv("data_raw/wharf_dat.csv")
+scripps_dat_raw <- read.csv("data_raw/scripps_temp_dat.csv")
+view(scripps_dat_raw)
 
-View(wharf_dat)
+scripps_dat <- scripps_dat_raw %>% 
+               slice(-1) %>%
+               filter(!is.na(temperature)) %>%
+               mutate(temp = as.numeric(temperature)) %>% 
+               mutate(mdy = as_date(time)) %>%
+               group_by(mdy) %>% 
+               summarize(scripps_temp = mean(temp)) %>% 
+               mutate(scripps_temp_1wk = lag(scripps_temp, n = 7)) %>% 
+               mutate(scripps_temp_2wk = lag(scripps_temp, n = 14)) %>%
+               mutate(scripps_temp_3wk = lag(scripps_temp, n = 21)) %>%
+               mutate(scripps_temp_4wk = lag(scripps_temp, n = 28))
 
-wharf_dat <- wharf_dat %>% 
-              mutate(datetime = as_datetime(time)) %>% 
-              mutate(datetime = with_tz(datetime, "US/Pacific")) %>%
-              mutate(date_hour = round_date(datetime, "hour")) %>% 
-              select(c(-1, -3, -5, -7, -9)) %>% 
-              group_by(date_hour) %>% 
-              summarize_at(vars(1:4), mean, na.rm = TRUE)
-
-daily_3yr_dat <- read.csv("data/daily_3yr_dat.csv")
-daily_3yr_dat$date_hour <- as_datetime(daily_3yr_dat$date_hour)
-daily_3yr_dat <- left_join(daily_3yr_dat, wharf_dat, by = "date_hour")
 daily_3yr_dat <- daily_3yr_dat %>% 
-  rename(wharf_temp = temperature)
+  mutate(mdy = mdy(date))
+
+daily_3yr_dat <- left_join(daily_3yr_dat, scripps_dat, by = "mdy")
+```
+
+## Adding Cabrillo Point data
+```{r}
+cabrillo_dat_raw <- read.csv("data_raw/cabrillo_temp_dat.csv")
+#view(cabrillo_dat_raw)
+
+cabrillo_dat <- cabrillo_dat_raw %>% 
+               slice(-1) %>%
+               filter(!is.na(sea_water_temperature)) %>%
+               mutate(temp = as.numeric(sea_water_temperature)) %>% 
+               mutate(mdy = as_date(time)) %>% 
+               group_by(mdy) %>% 
+               summarize(cabrillo_temp = mean(temp)) %>% 
+               mutate(cabrillo_temp_1wk = lag(cabrillo_temp, n = 7)) %>% 
+               mutate(cabrillo_temp_2wk = lag(cabrillo_temp, n = 14)) %>%
+               mutate(cabrillo_temp_3wk = lag(cabrillo_temp, n = 21)) %>%
+               mutate(cabrillo_temp_4wk = lag(cabrillo_temp, n = 28))
+#view(cabrillo_dat)
+
+daily_3yr_dat <- left_join(daily_3yr_dat, cabrillo_dat, by = "mdy")
 ```
 
 ## Dataframe without 2019
@@ -2040,8 +2063,8 @@ gam_dat <- daily_3yr_dat %>%
   filter(!is.na(transect_area_km2)) %>% 
   filter(!is.na(year)) %>% 
   filter(!is.na(date_hour)) %>% 
-  mutate(hour = as.numeric(hour(date_hour))) %>% 
-  filter(!is.na(day)) %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(month_fac = as.factor(month)) %>% 
   filter(!is.na(beaufort)) %>% 
   mutate(beaufort = as.factor(beaufort)) %>% 
   filter(!is.na(vis)) %>% 
@@ -2049,34 +2072,54 @@ gam_dat <- daily_3yr_dat %>%
   filter(Temp_top < 9000) %>% 
   filter(Salinity < 9000) %>% 
   filter(!is.na(WVHT)) %>% 
-  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(Temp_top)) %>%
+  filter(!is.na(scripps_temp)) %>%
+  filter(!is.na(scripps_temp_1wk)) %>%
+  filter(!is.na(scripps_temp_2wk)) %>%
+  filter(!is.na(scripps_temp_3wk)) %>%
+  filter(!is.na(scripps_temp_4wk)) %>%
+  filter(!is.na(cabrillo_temp)) %>% 
+  filter(!is.na(cabrillo_temp_1wk)) %>%
+  filter(!is.na(cabrillo_temp_2wk)) %>%
+  filter(!is.na(cabrillo_temp_3wk)) %>%
+  filter(!is.na(cabrillo_temp_4wk)) %>%
   filter(!is.na(tide)) %>% 
   mutate(presence = ifelse(total_unique > 0, 1, 0))
 
-#view(gam_dat)
+view(gam_dat)
 #idk how to get rid of NAs and "NA"s
+
+gam_dat2 <- daily_3yr_dat %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(month_fac = as.factor(month)) %>% 
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>%
+  mutate(presence = ifelse(total_unique > 0, 1, 0))
 ```
 
 ### Correlations between continuous predictors (Rohner et al. 2013)
 ```{r}
 cor.test(gam_dat$tide, gam_dat$WVHT, method = "pearson")
 
-gam_dat %>% 
-  select(c(18,22,52,55,73,74)) %>% 
-  cor()
-#tide is correlated with month (0.44), temp (0.22), and hour (0.32), probably worth considering dropping it
+gam_dat2 %>% 
+  select(c(18,22,28,52,55,78,83,85)) %>% 
+  cor(use = "complete.obs")
+#tide is correlated with month (0.45), LTER temp (0.29), channel temp (0.28), and hour (0.26)
+#hour is correlated with tide, channel temp, month, and LTER temp
+#Carp LTER temp is highly correlated with channel buoy temp (0.70), also with other temp locations
 
 plot.new()
-ggplot(gam_dat, aes(x = tide, y = month)) +
+ggplot(gam_dat2, aes(x = month, y = tide)) +
   geom_point() +
-  geom_smooth(method = "lm")
+  geom_smooth()
 
-ggplot(gam_dat, aes(x = tide, y = Temp_top)) +
+ggplot(gam_dat2, aes(x = tide, y = Temp_top)) +
   geom_point() +
   geom_smooth(method = "lm")
 #temp increases with tide
 
-ggplot(gam_dat, aes(x = hour, y = tide)) +
+ggplot(gam_dat2, aes(x = hour, y = tide)) +
   geom_point() +
   geom_smooth(method = "lm")
 #higher tides later in the day?
@@ -2234,32 +2277,31 @@ anova.gam(gam3)
 #year, beaufort, hour, and month significant
 ```
 
-### month model with year interaction only for hour and month
+### month model with year interaction only for hour and month (no N and S temps)
 ```{r}
 gam4 <- mgcv::gam(transect_total ~ year +
                                    s(hour, k = 10, by = year) +
-                                   s(month, k = 8, by = year) + 
+                                   s(month, k = 8, by = year) +
                                    beaufort +
                                    vis +
                                    s(tide, k = 10) +
                                    s(Temp_top, k = 10) +
                                    s(WVHT, k = 50) +
                                    offset(transect_area_km2),
-                  data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
 #select = TRUE does automated term selection to remove terms that are "infinitely smooth"
 
 summary(gam4)
-#60.7% of deviance explained - removing year interactions from envt'l terms improved DE
-#hour, tide, and temp are being modeled as linear (edf close to 1)
+#55.2% of deviance explained
 
 gam.check(gam4, rep = 500)
-#low p-value for waveheight and month, but edf not close to k' so it's not a problem with the number of knots (which are set to max anyways)
+#month and wvht p < 0.05, but edf much lower than k'
 
 anova.gam(gam4)
 #p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
-#year, beaufort, vis all significant parametric terms (see post-hoc tests below)
-#month (all years) and hour (2020 and 2021) significant smooth terms
-#tide, temp, and wave height n.s.
+#year, beaufort, vis all (marginally) significant parametric terms (see post-hoc tests below)
+#month (all years) and hour (2020 and 2021) significant.
+#tide, temp, and WVHT n.s.
 
 visreg(gam4)
 plot(gam4)
@@ -2284,8 +2326,212 @@ days4 <- as.data.frame(visreg4_data[[3]][["fit"]][["month"]])
 gam4_day_fits <- bind_cols(fits4, days4)
 #main peak is July, secondary peak in May, and minimum is September/October
 
-#wald_gam(gam6, comp=list(beaufort=levels(gam_dat$beaufort), year=c("2019", "2020", "2021")))
-#is this comparing for all years or just 2021?
+gam4_year_emms <- emmeans(gam4, "year")
+pwpm(gam4_year_emms, type = "response")
+#2019 lower than 2020 and 2021, but 2020 and 2021 not sig. diff:
+
+ggplot(data = gam_dat, aes(x = year, y = transect_total/transect_area_km2)) +
+  geom_boxplot()
+
+gam4_beaufort_emms <- emmeans(gam4, "beaufort")
+pwpm(gam4_beaufort_emms, type = "response")
+# no sig. contrasts
+
+gam4_vis_emms <- emmeans(gam4, "vis")
+pwpm(gam4_vis_emms, type = "response")
+#2 marginally lower than 4 (p = 0.080)
+```
+
+### Model selection for time lag of Scripps temp dataset
+```{r}
+scripps0_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(scripps_temp, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps1_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(scripps_temp_1wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps2_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(scripps_temp_2wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps3_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(scripps_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps4_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(scripps_temp_4wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+AIC(scripps0_gam4, scripps1_gam4, scripps2_gam4, scripps3_gam4, scripps4_gam4)
+#3-week lag lowest AIC
+summary(scripps4_gam4)
+#54.7, 56, 56.6, 56.6, and 54.1 DE, respectively
+
+#three-week lag is best for Scripps Pier data
+
+gam.check(scripps3_gam4)
+visreg(scripps3_gam4)
+```
+
+```{r}
+cabrillo0_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo1_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_1wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo2_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_2wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo3_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo4_gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_4wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+AIC(cabrillo0_gam4, cabrillo1_gam4, cabrillo2_gam4, cabrillo3_gam4, cabrillo4_gam4)
+#3-week lag lowest AIC
+
+summary(cabrillo4_gam4)
+#60.4, 59, 57.3, 64.3, 53.2 DE
+
+#3-week lag for Cabrillo Point has lowest AIC and highest DE
+```
+
+### Final (as of 5/3) Global GAM structure
+```{r}
+gam4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_3wk, k = 12) +
+                                   s(scripps_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+summary(gam4)
+#65.9% Deviance Explained
+
+gam.check(gam4, rep = 500)
+#month p < 0.05, but edf not close to k' and k is set as high as possible
+
+anova.gam(gam4)
+#p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
+#year, beaufort, vis all significant parametric terms (see post-hoc tests below)
+#month (all years) and hour (2020 and 2021) significant.
+#Carp and Cabrillo temp significan, Scripps temp is not
+#Waveheight is significant (P < 0.005)
+#Tide n.s.
+
+visreg(gam4)
+
+visreg4_data <- visreg(gam4)
+
+fits4 <- as.data.frame(visreg4_data[[3]][["fit"]][["visregFit"]])
+days4 <- as.data.frame(visreg4_data[[3]][["fit"]][["month"]])
+
+gam4_day_fits <- bind_cols(fits4, days4)
+
+plot(gam4)
+
+gam4_dredge_drop1 <- dredge(gam4, m.min = 8, fixed = "offset(transect_area_km2)")
+gam4_dredge_drop1
+
+#gam4_full_dredge <- dredge(gam4, m.min = 3, fixed = "offset(transect_area_km2)")
+gam4_full_dredge
+
+#gam4_top3_dredge <- dredge(gam4, m.max = 4, fixed = "offset(transect_area_km2)")
+gam4_top3_dredge
 
 gam4_year_emms <- emmeans(gam4, "year")
 pwpm(gam4_year_emms, type = "response")
@@ -2296,20 +2542,18 @@ ggplot(data = gam_dat, aes(x = year, y = transect_total/transect_area_km2)) +
 
 gam4_beaufort_emms <- emmeans(gam4, "beaufort")
 pwpm(gam4_beaufort_emms, type = "response")
-# 1 is significantly lower than 3 (ratio = 0.354, p = 0.0357)
-# 0 is marginally higher than 1 (ratio = 2.613, p = 0.0971)
+# 1 significantly lower than 0, no other significant contrasts
 
 gam4_vis_emms <- emmeans(gam4, "vis")
 pwpm(gam4_vis_emms, type = "response")
-#2 significantly lower than 4 (ratio = 0.462, p = 0.0279)
-
-concurvity(gam4, full = FALSE)
+#2 marginally lower than 4 (ratio = 0.465, p = 0.080) and significantly lower than 5 (ratio = 0.206, p < 0.01)
 ```
 
-### determining deviance explained of each term by dropping it from the global gam4 model
+### determining deviance explained of each term by dropping it from the global model - NEED TO RE-RUN ALL OF THIS with Scripps and Cabrillo temps as of 5/3
+*note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
 summary(gam4)
-#global model explains 60.7% of deviance
+#global model explains 65.9% of deviance
 
 gam4year <- mgcv::gam(transect_total ~ s(hour, k = 10, by = year) +
                                    s(month, k = 8, by = year) + 
@@ -2318,11 +2562,13 @@ gam4year <- mgcv::gam(transect_total ~ s(hour, k = 10, by = year) +
                                    s(tide, k = 10) +
                                    s(Temp_top, k = 10) +
                                    s(WVHT, k = 50) +
+                                   s(cabrillo_temp_3wk, k = 12) +
+                                   s(scripps_temp_3wk, k = 12) +
                                    offset(transect_area_km2),
                   data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
 summary(gam4year)
-60.7 - 50.6
-#year DE = 10.1%
+57.9 - 50.6
+#year DE = 7.3%
 
 gam4hour <- mgcv::gam(transect_total ~ year +
                                    s(month, k = 8, by = year) + 
