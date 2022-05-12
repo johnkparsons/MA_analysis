@@ -1887,6 +1887,22 @@ size_dat_2021 %>%
     labs(x = "Length (ft)", y = "Count")
 ggsave("plots/2021_size_histo.png", height = 5, width = 7)
 
+size_dat_3yr %>% 
+  filter(length_adj_m > 0) %>% 
+  filter(unique == "Y") %>%
+  ggplot(aes(x = length_adj_m)) +
+    geom_histogram() +
+    geom_vline(xintercept = 3.5, lty = 2, size = 1, color = "red") +
+    geom_vline(xintercept = 3, lty = 2, size = 1, color = "blue") +
+    theme_bw() +
+    scale_x_continuous(breaks = c(1,2,3,4,5)) +
+    labs(x = "Length (meters)", y = "Count")
+ggsave("plots/3yr_size_histo.png", height = 5, width = 7)
+
+daily_3yr_dat %>%
+  summarize(juveniles = sum(juvenile), adults = sum(adult))
+#330 juveniles and 173 adults
+
 size_dat_2021 %>% 
   filter(depth..JP. == "surface") %>% 
   ggplot(aes(x = length_raw_m)) +
@@ -1949,7 +1965,8 @@ size_dat_3yr %>%
   filter(!is.na(length_raw_m)) %>%
   filter(length_adj_m > 1) %>%
   summarize(median_adj = median(length_adj_m), median_raw = median(length_raw_m))
-#increase in median size of approximately 0.26 meters
+2.786541-2.529871
+#increase in median size of 0.257 meters
 
 size_dat_3yr %>% 
   filter(unique == "Y") %>%
@@ -1968,13 +1985,13 @@ size_dat_3yr %>%
   filter(length_adj_m > 1) %>%
   mutate(class_raw = ifelse(length_raw_m < 3, "Juvenile", "Adult")) %>% 
   mutate(class_adj = ifelse(length_adj_m < 3, "Juvenile", "Adult")) %>% 
-  count(class_raw)
+  count(class_adj)
 #113 adults and 411 juveniles with raw measurements, 183 adults and 341 juveniles with adjusted measurements - adjustments bring 70 sharks from juvenile to adult length
 
 #looking at how adjustments affect shallow sharks (overlapping histograms):
 size_dat_3yr %>% 
   filter(unique == "Y") %>%
-  filter(depth == "shallow") %>% 
+  filter(depth..JP. == "shallow") %>% 
   filter(!is.na(length_adj)) %>% 
   pivot_longer(c(length_raw_m, length_adj_m), names_to = "measure", values_to = "length_meters") %>% 
   ggplot(aes(x = length_meters)) +
@@ -1985,7 +2002,7 @@ size_dat_3yr %>%
 
 # same as above but faceted:
 size_dat_3yr %>% 
-  filter(depth == "shallow") %>% 
+  filter(depth..JP. == "shallow") %>% 
   filter(!is.na(length_adj)) %>% 
   pivot_longer(c(length_raw_m, length_adj_m), names_to = "measure", values_to = "length_meters") %>% 
   ggplot(aes(x = length_meters)) +
@@ -2096,11 +2113,41 @@ gam_dat2 <- daily_3yr_dat %>%
   mutate(vis = as.factor(vis)) %>% 
   filter(Temp_top < 9000) %>%
   mutate(presence = ifelse(total_unique > 0, 1, 0))
+
+gam_dat3 <- daily_3yr_dat %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(month_fac = as.factor(month)) %>% 
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>%
+  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
+  filter(!is.na(cabrillo_temp_3wk)) %>%
+  filter(!is.na(scripps_temp_3wk)) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(vis)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  filter(!is.na(tide)) %>% 
+  filter(!is.na(transect_total)) %>%
+  filter(!is.na(transect_area_km2)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) 
+#this is to be used when dredging, as dredge() requires no na's in the dataset. Use dat2 for modelling, as n will increase from 209 to 213
 ```
 
 ### Correlations between continuous predictors (Rohner et al. 2013)
 ```{r}
-cor.test(gam_dat$tide, gam_dat$WVHT, method = "pearson")
+cor.test(gam_dat2$scripps_temp, gam_dat2$Temp_top, method = "pearson")
+#Scripps and carp temp are correlated at 0.49 (moderate correlation)
+
+cor.test(gam_dat2$cabrillo_temp, gam_dat2$Temp_top, method = "pearson")
+#Cabrillo and Carp temp are correlated at 0.19
+
+cor.test(gam_dat2$scripps_temp_3wk, gam_dat2$Temp_top, method = "pearson")
+# 3 week lagged Scripps and carp temp are correlated at 0.36
+
+cor.test(gam_dat2$cabrillo_temp_3wk, gam_dat2$Temp_top, method = "pearson")
+# 3 week lagged Cabrillo and Carp temp are correlated at 0.27
 
 gam_dat2 %>% 
   select(c(18,22,28,52,55,78,83,85)) %>% 
@@ -2125,6 +2172,24 @@ ggplot(gam_dat2, aes(x = hour, y = tide)) +
 #higher tides later in the day?
 ```
 
+### Temp and season correlation
+```{r}
+month_temp_aov <- aov(Temp_top~as_factor(month), gam_dat2)
+summary(month_temp_aov)
+
+TukeyHSD(month_temp_aov)
+
+ggplot(aes(x = as_factor(month), y = Temp_top), data = gam_dat2) +
+  geom_boxplot()
+
+day_temp_lm <- lm(Temp_top~day, gam_dat2)
+summary(day_temp_lm)
+
+ggplot(aes(x = day, y = Temp_top), data = gam_dat2) +
+  geom_point() +
+  geom_smooth()
+```
+
 ### Trends with detectability variables
 ```{r}
 ggplot(gam_dat, aes(x = as.numeric(beaufort), y = transect_total)) + 
@@ -2145,10 +2210,9 @@ ggplot(gam_dat, aes(x = as.numeric(vis), y = transect_total)) +
 
 ### Trends with LTER variables
 ```{r}
-ggplot(gam_dat, aes(x = Temp_top, y = transect_total)) + 
+ggplot(gam_dat2, aes(x = Temp_top, y = transect_total)) + 
   geom_jitter() +
-  geom_smooth() + 
-  facet_grid(year~.)
+  geom_smooth()
 
 ggplot(gam_dat, aes(x = Temp_top, y = total_unique)) + 
   geom_jitter() +
@@ -2289,7 +2353,7 @@ gam4 <- mgcv::gam(transect_total ~ year +
                                    s(WVHT, k = 50) +
                                    offset(transect_area_km2),
                   data = gam_dat2, method = "REML", family = nb, select = TRUE)
-#select = TRUE does automated term selection to remove terms that are "infinitely smooth"
+#select = TRUE does automated term penalization to remove terms that are "infinitely smooth"
 
 summary(gam4)
 #55.2% of deviance explained
@@ -2415,6 +2479,7 @@ gam.check(scripps3_gam4)
 visreg(scripps3_gam4)
 ```
 
+### Model selection for Cabrillo Point temp dataset
 ```{r}
 cabrillo0_gam4 <- mgcv::gam(transect_total ~ year +
                                    s(month, k = 8, by = year) +
@@ -2485,9 +2550,9 @@ summary(cabrillo4_gam4)
 #3-week lag for Cabrillo Point has lowest AIC and highest DE
 ```
 
-### Final (as of 5/3) Global GAM structure
+### Global GAM structure (both non-local temp datasets included)
 ```{r}
-gam4 <- mgcv::gam(transect_total ~ year +
+glob_gam <- mgcv::gam(transect_total ~ year +
                                    s(month, k = 8, by = year) +
                                    s(hour, k = 10, by = year) +
                                    beaufort +
@@ -2498,54 +2563,57 @@ gam4 <- mgcv::gam(transect_total ~ year +
                                    s(scripps_temp_3wk, k = 12) +
                                    s(WVHT, k = 50) +
                                    offset(transect_area_km2),
-                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
-summary(gam4)
-#65.9% Deviance Explained
+                  data = gam_dat3, method = "REML", family = nb, na.action = "na.fail")
+summary(glob_gam)
+#69% Deviance Explained
 
-gam.check(gam4, rep = 500)
+gam.check(glob_gam, rep = 500)
 #month p < 0.05, but edf not close to k' and k is set as high as possible
 
-anova.gam(gam4)
+anova.gam(glob_gam)
 #p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
 #year, beaufort, vis all significant parametric terms (see post-hoc tests below)
 #month (all years) and hour (2020 and 2021) significant.
-#Carp and Cabrillo temp significan, Scripps temp is not
+#Carp and Cabrillo temp significant, Scripps temp is not
 #Waveheight is significant (P < 0.005)
 #Tide n.s.
 
-visreg(gam4)
+visreg(glob_gam)
 
-visreg4_data <- visreg(gam4)
+visreg_data <- visreg(glob_gam)
 
-fits4 <- as.data.frame(visreg4_data[[3]][["fit"]][["visregFit"]])
-days4 <- as.data.frame(visreg4_data[[3]][["fit"]][["month"]])
+fits <- as.data.frame(visreg_data[[3]][["fit"]][["visregFit"]])
+days <- as.data.frame(visreg_data[[3]][["fit"]][["month"]])
 
 gam4_day_fits <- bind_cols(fits4, days4)
 
-plot(gam4)
+plot(glob_gam)
 
-gam4_dredge_drop1 <- dredge(gam4, m.min = 8, fixed = "offset(transect_area_km2)")
-gam4_dredge_drop1
+glob_dredge_drop1 <- dredge(glob_gam, m.min = 10, fixed = "offset(transect_area_km2)")
+glob_dredge_drop1
+#model without Scripps has a weight of 0.101
 
-#gam4_full_dredge <- dredge(gam4, m.min = 3, fixed = "offset(transect_area_km2)")
-gam4_full_dredge
+AIC(gam4, scripps3_gam4, cabrillo3_gam4, glob_gam)
 
-#gam4_top3_dredge <- dredge(gam4, m.max = 4, fixed = "offset(transect_area_km2)")
-gam4_top3_dredge
+#glob_full_dredge <- dredge(glob_gam m.min = 3, fixed = "offset(transect_area_km2)")
+glob_full_dredge
 
-gam4_year_emms <- emmeans(gam4, "year")
-pwpm(gam4_year_emms, type = "response")
+#glob_top3_dredge <- dredge(glob_gam, m.max = 4, fixed = "offset(transect_area_km2)")
+glob_top3_dredge
+
+glob_year_emms <- emmeans(glob_gam, "year")
+pwpm(glob_year_emms, type = "response")
 #2019 lower than 2020 and 2021, but 2020 and 2021 not sig. diff:
 
-ggplot(data = gam_dat, aes(x = year, y = transect_total/transect_area_km2)) +
+ggplot(data = gam_dat2, aes(x = year, y = transect_total/transect_area_km2)) +
   geom_boxplot()
 
-gam4_beaufort_emms <- emmeans(gam4, "beaufort")
-pwpm(gam4_beaufort_emms, type = "response")
+glob_beaufort_emms <- emmeans(glob_gam, "beaufort")
+pwpm(glob_beaufort_emms, type = "response")
 # 1 significantly lower than 0, no other significant contrasts
 
-gam4_vis_emms <- emmeans(gam4, "vis")
-pwpm(gam4_vis_emms, type = "response")
+glob_vis_emms <- emmeans(glob_gam, "vis")
+pwpm(glob_vis_emms, type = "response")
 #2 marginally lower than 4 (ratio = 0.465, p = 0.080) and significantly lower than 5 (ratio = 0.206, p < 0.01)
 ```
 
