@@ -9,8 +9,8 @@ editor_options:
 
 #Setup
 ```{r, eval=FALSE}
-#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug"))
-#install.packages("itsadug")
+#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", plyr", "broom.mixed", "ggthemes", "padr", , "ptest", "maps", "mapdata", hexbin", "zoo", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr"))
+#install.packages("installr")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -49,8 +49,12 @@ library(AER)
 library(mgcv) #GAMs
 library(visreg) #visualizing GAMs
 library(itsadug)
+library(installr)
 #webshot::install_phantomjs() 
 #citation("ptest")
+
+#updateR()
+#citation()
 ```
 
 ===========================================================================
@@ -723,6 +727,12 @@ cabrillo_dat <- cabrillo_dat_raw %>%
 #view(cabrillo_dat)
 
 daily_3yr_dat <- left_join(daily_3yr_dat, cabrillo_dat, by = "mdy")
+```
+
+## CSULB temp data (makes R crash - 5/12)
+```{r}
+#lb_temp_20 <- read.csv("data_raw/All_raw_temp_data_2020.csv")
+#view(lb_temp_20)
 ```
 
 ## Dataframe without 2019
@@ -2103,7 +2113,7 @@ gam_dat <- daily_3yr_dat %>%
   filter(!is.na(tide)) %>% 
   mutate(presence = ifelse(total_unique > 0, 1, 0))
 
-view(gam_dat)
+#view(gam_dat)
 #idk how to get rid of NAs and "NA"s
 
 gam_dat2 <- daily_3yr_dat %>% 
@@ -2188,6 +2198,19 @@ summary(day_temp_lm)
 ggplot(aes(x = day, y = Temp_top), data = gam_dat2) +
   geom_point() +
   geom_smooth()
+```
+
+### Concurvity
+```{r}
+mgcv::concurvity(glob_gam,full=TRUE)
+#all terms have high concurvity w/ the "rest of the model"
+
+mgcv::concurvity(glob_gam,full=FALSE)
+#Cabrillo x Carp = 0.234
+#Scripps x Carp = 0.297
+#Cabrillo x Scripps = 0.229
+#Tide x WVHT is very high (0.9), WVHT is also high with all three temp variables (>0.4)
+#Many environmental variables concurved (?) with the temporal ones but that is to be expected
 ```
 
 ### Trends with detectability variables
@@ -2341,7 +2364,7 @@ anova.gam(gam3)
 #year, beaufort, hour, and month significant
 ```
 
-### month model with year interaction only for hour and month (no N and S temps)
+### "Local" month model with year interaction only for hour and month (no N and S temps)
 ```{r}
 gam4 <- mgcv::gam(transect_total ~ year +
                                    s(hour, k = 10, by = year) +
@@ -2479,7 +2502,73 @@ gam.check(scripps3_gam4)
 visreg(scripps3_gam4)
 ```
 
-### Model selection for Cabrillo Point temp dataset
+### Model selection for Scripps temp dataset (local temp NOT included)
+```{r}
+scripps_0 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(scripps_temp, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps_1 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(scripps_temp_1wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps_2 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(scripps_temp_2wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps_3 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(scripps_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+scripps_4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(scripps_temp_4wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+MuMIn::AICc(scripps_0, scripps_1, scripps_2, scripps_3, scripps_4)
+#1, 2, 3, and 4 are all very close
+
+summary(scripps_4)
+#54.5, 55.6, 56, 54.8, 53.8 DE
+
+#pretty ambiguous here
+```
+
+### Model selection for Cabrillo Point temp dataset (local temp included)
 ```{r}
 cabrillo0_gam4 <- mgcv::gam(transect_total ~ year +
                                    s(month, k = 8, by = year) +
@@ -2542,7 +2631,7 @@ cabrillo4_gam4 <- mgcv::gam(transect_total ~ year +
                   data = gam_dat2, method = "REML", family = nb, select = TRUE)
 
 AIC(cabrillo0_gam4, cabrillo1_gam4, cabrillo2_gam4, cabrillo3_gam4, cabrillo4_gam4)
-#3-week lag lowest AIC
+#3-week lag lowest AIC by far
 
 summary(cabrillo4_gam4)
 #60.4, 59, 57.3, 64.3, 53.2 DE
@@ -2550,7 +2639,73 @@ summary(cabrillo4_gam4)
 #3-week lag for Cabrillo Point has lowest AIC and highest DE
 ```
 
-### Global GAM structure (both non-local temp datasets included)
+### Model selection for Cabrillo Point temp dataset (local temp NOT included)
+```{r}
+cabrillo_0 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(cabrillo_temp, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo_1 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(cabrillo_temp_1wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo_2 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(cabrillo_temp_2wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo_3 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(cabrillo_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+cabrillo_4 <- mgcv::gam(transect_total ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(cabrillo_temp_4wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                  data = gam_dat2, method = "REML", family = nb, select = TRUE)
+
+MuMIn::AICc(cabrillo_0, cabrillo_1, cabrillo_2, cabrillo_3, cabrillo_4)
+#3-week lag lowest AIC by far
+
+summary(cabrillo_4)
+#58.5, 57.4, 56.1, 63.1, 53.2 DE
+
+#3-week lag for Cabrillo Point has lowest AIC and highest DE
+```
+
+### Regional GAM structure (both non-local temp datasets included)
 ```{r}
 glob_gam <- mgcv::gam(transect_total ~ year +
                                    s(month, k = 8, by = year) +
@@ -2563,7 +2718,7 @@ glob_gam <- mgcv::gam(transect_total ~ year +
                                    s(scripps_temp_3wk, k = 12) +
                                    s(WVHT, k = 50) +
                                    offset(transect_area_km2),
-                  data = gam_dat3, method = "REML", family = nb, na.action = "na.fail")
+                  data = gam_dat2, method = "REML", family = nb)
 summary(glob_gam)
 #69% Deviance Explained
 
@@ -2617,7 +2772,43 @@ pwpm(glob_vis_emms, type = "response")
 #2 marginally lower than 4 (ratio = 0.465, p = 0.080) and significantly lower than 5 (ratio = 0.206, p < 0.01)
 ```
 
-### determining deviance explained of each term by dropping it from the global model - NEED TO RE-RUN ALL OF THIS with Scripps and Cabrillo temps as of 5/3
+### Comparing gam4 models (local vs regional)
+```{r}
+MuMIn::AICc(gam4, glob_gam, cabrillo3_gam4, scripps3_gam4, cabrillo_3, scripps_3)
+#cabrillo+carp and just Cabrillo have lowest AIC
+
+summary(gam4) #55.2% DE with just Carp temp - Cabrillo temp is definitely doing a lot of work
+summary(cabrillo3_gam4) #64.3% DE with both Carp and Cabrillo temp
+summary(cabrillo_3) #63.1% DE with just Cabrillo temp
+```
+
+### Global GAM, but with total unique rather than transect count (sensitivity analysis)
+```{r}
+glob_gam_tot <- mgcv::gam(total_unique ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_3wk, k = 12) +
+                                   s(scripps_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = gam_dat2, method = "REML", family = nb)
+summary(glob_gam_tot)
+#64.5% DE, n = 202
+summary(glob_gam)
+#69% DE, n = 208
+
+anova.gam(glob_gam_tot)
+anova.gam(glob_gam)
+#same terms are significant when transect or total count is used
+
+visreg(glob_gam_tot)
+```
+
+### determining deviance explained of each term by dropping it from the global model - NEED TO RE-RUN ALL OF THIS for both local and regional models as of 5/12
 *note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
 summary(gam4)
@@ -2630,8 +2821,6 @@ gam4year <- mgcv::gam(transect_total ~ s(hour, k = 10, by = year) +
                                    s(tide, k = 10) +
                                    s(Temp_top, k = 10) +
                                    s(WVHT, k = 50) +
-                                   s(cabrillo_temp_3wk, k = 12) +
-                                   s(scripps_temp_3wk, k = 12) +
                                    offset(transect_area_km2),
                   data = gam_dat, method = "REML", family = nb, na.action = "na.fail", select = TRUE)
 summary(gam4year)
@@ -3029,22 +3218,51 @@ juv_dat <- daily_3yr_dat %>%
   filter(!is.na(Temp_top)) %>% 
   filter(!is.na(tide))
 
-juv_dat0 <- daily_3yr_dat %>%
-  filter(!is.na(total_area)) %>% 
-  filter(!is.na(juvenile)) %>% 
-  filter(!is.na(year)) %>% 
-  filter(!is.na(date_hour)) %>% 
+juv_dat_all <- daily_3yr_dat %>% 
   mutate(hour = as.numeric(hour(date_hour))) %>%
   mutate(month = as.factor(month)) %>% 
-  filter(!is.na(day)) %>% 
-  filter(!is.na(beaufort)) %>% 
   mutate(beaufort = as.factor(beaufort)) %>% 
-  filter(!is.na(vis)) %>% 
   mutate(vis = as.factor(vis)) %>% 
-  filter(Temp_top < 9000) %>% 
-  filter(!is.na(WVHT)) %>% 
-  filter(!is.na(Temp_top)) %>% 
-  filter(!is.na(tide))
+  filter(Temp_top < 9000)
+
+view(size_dat_unique)
+
+length_dat_unique <- size_dat_unique %>% 
+  mutate(year = as.character(year(mdy(date)))) %>% 
+  {if (.$year == "2019") filter(., length_adj_m > 0) else filter(., video_YN == "manual" | video_YN == "manual_1")}
+  
+#size_dat_2yr <- full_join(size_dat_2019, size_dat_2020)
+
+#dat_3yr_length <- full_join(size_dat_2yr, size_dat_2021)
+
+length_dat_unique$date <- as.character(length_dat_unique$date)
+joined_3yr_length <- left_join(daily_3yr_dat, length_dat_unique, by = "date")
+view(joined_3yr_length)
+
+length_classed_3yr <- joined_3yr_length %>%
+  filter(!is.na(length_adj_m)) %>%
+  filter(length_adj_m > 0) %>% 
+  group_by(date) %>%
+  dplyr::summarize(juvenile_count = sum(length_adj_m < 3), 
+                   adult_count = sum(length_adj_m >= 3)) 
+
+#view(size_classed_3yr)
+
+
+daily_3yr_dat_length <- left_join(daily_3yr_dat, length_classed_3yr, by = "date")
+
+daily_3yr_dat_length <- daily_3yr_dat_length  %>%
+  mutate(juvenile = ifelse(is.na(juvenile_count), 0, juvenile_count)) %>% 
+  mutate(adult = ifelse(is.na(adult_count), 0, adult_count)) %>% 
+  mutate(total_sized_count = juvenile_count + adult_count) %>% 
+  filter(detection == "Y" | detection == "N")
+view(daily_3yr_dat_length)
+
+daily_3yr_dat <- daily_3yr_dat  %>%
+  mutate(total_area = ifelse(year == 2019, transect_area_km2, transect_area_km2 + manual_area_km2))
+
+
+  
 ```
 
 ### Examine relationships
@@ -3065,31 +3283,16 @@ ggplot(juv_dat, aes(x = Temp_top, y = juvenile)) +
 
 ### Modelling density of juveniles
 ```{r}
-juvgam0 <- mgcv::gam(juvenile ~ year +
-                                month +
-                                 s(hour, k = 10, by = year) +
-                                 beaufort +
-                                 vis +
-                                 s(tide, k = 10) +
-                                 s(Temp_top, k = 10) +
-                                 s(WVHT, k = 50) +
-                                 offset(total_area), data = juv_dat0,
-                                 method = "REML", family = nb,
-                                 na.action = "na.fail", select = TRUE)
-summary(juvgam0)
-anova(juvgam0)
-
 juvgam1 <- mgcv::gam(juvenile ~ year +
-                                 s(hour, k = 10, by = year) +
-                                 s(month, k = 8, by = year) + 
-                                 beaufort +
-                                 vis +
-                                 s(tide, k = 10) +
-                                 s(Temp_top, k = 10) +
-                                 s(WVHT, k = 50) +
-                                 offset(total_area), data = juv_dat,
-                                 method = "REML", family = nb,
-                                 na.action = "na.fail", select = TRUE)
+                                s(hour, k = 10, by = year) +
+                                s(month, k = 8, by = year) + 
+                                beaufort +
+                                vis +
+                                s(tide, k = 10) +
+                                s(Temp_top, k = 10) +
+                                s(WVHT, k = 50) +
+                                offset(total_area), data = juv_dat,
+                                method = "REML", family = nb, select = TRUE)
 
 summary(juvgam1)
 # 30.2% of deviance explained
@@ -3385,6 +3588,25 @@ summary(adgam1wvht)
 #wvht DE = 0%
 ```
 
+## Modelling length of each shark
+```{r}
+length_dat <- daily_3yr_dat %>%
+  filter(!is.na(total_area)) %>% 
+  filter(!is.na(juvenile)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  mutate(hour = as.numeric(hour(date_hour))) %>% 
+  filter(!is.na(day)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  filter(!is.na(vis)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  filter(Temp_top < 9000) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(Temp_top)) %>% 
+  filter(!is.na(tide))
+
+```
 
 ===============================================================================
 
@@ -4175,14 +4397,16 @@ ggsave("plots/adult_swim.png")
 
 Histogram faceted by year:
 ```{r}
-size_dat_unique %>% 
-  ggplot(aes(x = length, fill = as.factor(year(date)))) +
+size_dat_unique %>%
+  filter(length_adj_m > 0) %>% 
+  mutate(year = as_factor(year(mdy(date)))) %>%
+  ggplot(aes(x = length_adj_m, fill = year)) +
     geom_histogram() +
-    facet_grid(rows = vars(year(date))) +
+    facet_grid(rows = vars(year)) +
     theme_clean() +
     labs(y = "Count", x = "Length (m)", fill = "Year") +
     theme(strip.text.y = element_blank()) +
-    scale_color_brewer(palette = "Set1")
+    scale_fill_brewer(palette = "Dark2")
 ggsave("plots/size_3yrs_histo.png", height = 5, width = 5)
 ```
 
@@ -4197,14 +4421,17 @@ size_dat_unique %>%
 
 Years overlaid:
 ```{r}
-size_dat_unique %>% 
-  ggplot(aes(x = as_date(yday(date)), y = length)) +
-    geom_point(aes(color = as.factor(year)), alpha = 0.8) +
+size_dat_unique %>%
+  filter(length_adj_m > 0) %>% 
+  mutate(day = as_date(yday(mdy(date)))) %>% 
+  mutate(year = as_factor(year(mdy(date)))) %>% 
+  ggplot(aes(x = day, y = length_adj_m)) +
+    geom_point(aes(color = year), alpha = 0.8) +
     geom_smooth() +
     theme_clean() +
     scale_x_date(date_labels = "%B", breaks = "1 month") +
     labs(x = "Date", y = "Length (m)", color = "Year") +
-    scale_color_brewer(palette = "Set1")
+    scale_color_brewer(palette = "Dark2")
     #geom_hline(yintercept = 3)
 ggsave("plots/size_3yrs_scatter.png", height = 5, width = 9)
 ```
@@ -4530,29 +4757,29 @@ dat_2020 %>%
 ### All 3 years
 ```{r}
 size_dat_3yr %>%
-  filter(video == "manual" | video == "manual_1") %>% 
+  filter(video_YN == "manual" | video_YN == "manual_1") %>% 
   filter(unique == "Y") %>%
-  filter(!is.na(length)) %>% 
+  #filter(!is.na(length)) %>% 
   ggplot(aes(x = long, y = lat)) +
-    geom_point(aes(color = size_class)) +
-    geom_smooth()
+    geom_point()
+    #geom_smooth()
 #follows a certain distance from the coastline
 
 size_dat_3yr %>%
-  filter(video == "manual" | video == "manual_1") %>%
+  filter(video_YN == "manual" | video_YN == "manual_1") %>%
   filter(unique == "Y") %>%
-  filter(!is.na(length)) %>%
+  filter(!is.na(length_adj_m)) %>%
   ggplot(aes(x = long, y = lat)) +
-    geom_hex(bins = 15) +
+    geom_hex(bins = 12) +
     scale_fill_distiller(palette = "YlOrRd", direction = 1) +
     theme_classic() +
-    geom_point(aes(x = -119.56, y = 34.405))
+    geom_point(aes(x = -119.56, y = 34.405), alpha = 0.5)
 ggsave("plots/heatmap_3yrs.png", width = 10)
 
 size_dat_3yr %>%
-  filter(video == "inner" | video == "outer") %>%
+  filter(video_YN == "inner" | video_YN == "outer") %>%
   filter(unique == "Y") %>%
-  filter(!is.na(length)) %>%
+  filter(!is.na(length_adj_m)) %>%
   dplyr::filter(lat > 0) %>% 
   ggplot(aes(x = long, y = lat)) +
     geom_hex(bins = 15) +
