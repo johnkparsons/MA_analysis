@@ -405,6 +405,7 @@ dat_2021 <- dat_2021 %>%
 tide_dat_2021 <- read.csv("data_raw/2021_tide_dat.txt")
 #View(tide_dat_2021)
 #str(tide_dat_2021)
+#Local time
 
 tide_dat_2021 <- tide_dat_2021 %>% 
   rename(time = 2) %>% 
@@ -607,24 +608,37 @@ daily_3yr_dat <- daily_3yr_dat %>%
 
 ### Reading in Carp LTER data
 ```{r}
-lter_dat <- read.csv("data_raw/lter_dat.csv")
+lter_dat_raw <- read.csv("data_raw/lter_dat.csv")
+#view(lter_dat_raw)
 
-lter_dat <- lter_dat %>% 
+lter_dat <- lter_dat_raw %>% 
   filter(year > 2018) %>% 
   filter(year < 2022) %>% 
   mutate(hour = (24*decimal_time)) %>%
   filter(row_number() %% 3 == 1) %>% 
   mutate(hour = round(hour, digits = 1)) %>% 
   mutate(date_hour = make_datetime(year, month, day, hour)) %>% 
+  mutate(date_hour = force_tz(date_hour, tzone = "America/Los_Angeles")) %>%
   rename(day_of_month = day) %>% 
   select(-c(1, 6:53, 58:75)) %>% 
   select(!year)
+
+#view(lter_dat)
+
+lter_dat %>% 
+  filter(Temp_top < 9000) %>% 
+  filter(month == 8) %>% 
+  filter(day(date_hour) == 29) %>% 
+  filter(year(date_hour) == 2021) %>% 
+  ggplot(aes(y = Temp_top)) +
+    geom_point(aes(x = date_hour)) +
+    geom_point(aes(x = date_hour_pst), color = "red")
 ```
 
 ### Adding LTER data to daily 3yr dataset 
 ```{r}
 daily_3yr_dat_1 <- left_join(daily_3yr_dat, lter_dat, by = "date_hour")
-#view(daily_3yr_dat_1)
+view(daily_3yr_dat_1)
 
 daily_3yr_dat <- select(daily_3yr_dat_1, -c(49,50,56,73))
 write.csv(daily_3yr_dat, "data/daily_3yr_dat.csv")
@@ -655,7 +669,7 @@ nrow(size_dat_unique)
 
 size_dat_unique$date <- as.character(size_dat_unique$date)
 joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
-view(joined_3yr)
+#view(joined_3yr)
 ```
 
 ## Adding size classes to daily 3yr dataframe
@@ -757,7 +771,7 @@ daily_3yr_dat <- left_join(daily_3yr_dat, scripps_dat, by = "mdy")
 ## Adding Cabrillo Point data
 ```{r}
 cabrillo_dat_raw <- read.csv("data_raw/cabrillo_temp_dat.csv")
-#view(cabrillo_dat_raw)
+view(cabrillo_dat_raw)
 
 cabrillo_dat <- cabrillo_dat_raw %>% 
                slice(-1) %>%
@@ -775,10 +789,391 @@ cabrillo_dat <- cabrillo_dat_raw %>%
 daily_3yr_dat <- left_join(daily_3yr_dat, cabrillo_dat, by = "mdy")
 ```
 
-## CSULB temp data (makes R crash - 5/12)
+## CSULB SST data
 ```{r}
-#lb_temp_20 <- read.csv("data_raw/All_raw_temp_data_2020.csv")
-#view(lb_temp_20)
+padaro_sst_19_raw <- read.csv("data_raw/CSULB/CSULB Shark Buoys_SST.csv")
+#view(padaro_sst)
+
+padaro_sst_19 <- padaro_sst_19_raw %>% 
+  rename(sst = 33) %>% 
+  rename(datetime_UTC = 1) %>% 
+  filter(!is.na(sst)) %>% 
+  filter(year(datetime_UTC) == 2019)
+#this looks like SST from one buoy from 2019-2020
+
+filtered_temp_20_21 <- read.csv("data_raw/CSULB/All_2020-2021_filtered_temp_data.csv")
+#view(filtered_temp_20_21)
+
+padaro_sst_20_21 <- filtered_temp_20_21 %>% 
+  filter(Station == "JWS_Padaro_Buoy") %>% 
+  rename(sst = 6) %>% 
+  rename(datetime_UTC = 1)
+
+padaro_sst_raw <- bind_rows(padaro_sst_19, padaro_sst_20_21)
+#str(padaro_sst)
+#view(padaro_sst)
+padaro_sst <- padaro_sst_raw %>%
+  mutate(datetime_UTC = as_datetime(datetime_UTC)) %>% 
+  mutate(datetime_PST = force_tz(datetime_UTC, tzone = "America/Los_Angeles")) %>%
+  group_by(date(datetime_PST), hour(datetime_PST)) %>% 
+  summarize(sst = mean(sst)) %>% 
+  rename(date = 1, hour = 2) %>% 
+  mutate(date_hour = make_datetime(year(date), month(date), day(date), hour))
+
+write.csv(padaro_sst, "data/padaro_sst.csv")
+
+daily_3yr_dat <- left_join(daily_3yr_dat, padaro_sst, by = "date_hour")
+```
+
+## ERI SONGS data
+```{r}
+### pre-written code from ERI website ###
+
+# Package ID: edi.648.3 Cataloging System:https://pasta.edirepository.org.
+# Data set title: UCSB SONGS Mitigation Monitoring: Wetland Performance Standard - Fish Abundance and Species Richness.
+# Data set creator:  Stephen Schroeter -  
+# Data set creator:  Henry Page -  
+# Data set creator:  Daniel Reed -  
+# Data set creator:  David Huang -  
+# Data set creator:    - SONGS Mitigation Monitoring 
+# Contact:    - Information Manager, SONGS Mitigation Monitoring Project   - songsmmp@lifesci.ucsb.edu
+# Stylesheet v2.11 for metadata conversion into program: John H. Porter, Univ. Virginia, jporter@virginia.edu 
+
+inUrl1  <- "https://pasta.lternet.edu/package/data/eml/edi/648/3/1d2580fa7e39c5f0e73f81fb1f58dd12" 
+infile1 <- tempfile()
+try(download.file(inUrl1,infile1,method="curl"))
+if (is.na(file.size(infile1))) download.file(inUrl1,infile1,method="auto")
+
+                   
+ dt1 <-read.csv(infile1,header=F 
+          ,skip=1
+            ,sep=","  
+        , col.names=c(
+                    "year",     
+                    "wetland_code",     
+                    "module_code",     
+                    "tc_mc_code",     
+                    "habitat_code",     
+                    "count_per_m2",     
+                    "species_count"    ), check.names=TRUE)
+               
+unlink(infile1)
+		    
+# Fix any interval or ratio columns mistakenly read in as nominal and nominal columns read as numeric or dates read as strings
+                
+if (class(dt1$wetland_code)!="factor") dt1$wetland_code<- as.factor(dt1$wetland_code)
+if (class(dt1$module_code)!="factor") dt1$module_code<- as.factor(dt1$module_code)
+if (class(dt1$tc_mc_code)!="factor") dt1$tc_mc_code<- as.factor(dt1$tc_mc_code)
+if (class(dt1$habitat_code)!="factor") dt1$habitat_code<- as.factor(dt1$habitat_code)
+if (class(dt1$count_per_m2)=="factor") dt1$count_per_m2 <-as.numeric(levels(dt1$count_per_m2))[as.integer(dt1$count_per_m2) ]               
+if (class(dt1$count_per_m2)=="character") dt1$count_per_m2 <-as.numeric(dt1$count_per_m2)
+if (class(dt1$species_count)=="factor") dt1$species_count <-as.numeric(levels(dt1$species_count))[as.integer(dt1$species_count) ]               
+if (class(dt1$species_count)=="character") dt1$species_count <-as.numeric(dt1$species_count)
+                
+# Convert Missing Values to NA for non-dates
+                
+dt1$wetland_code <- as.factor(ifelse((trimws(as.character(dt1$wetland_code))==trimws("-99999")),NA,as.character(dt1$wetland_code)))
+dt1$module_code <- as.factor(ifelse((trimws(as.character(dt1$module_code))==trimws("-99999")),NA,as.character(dt1$module_code)))
+dt1$tc_mc_code <- as.factor(ifelse((trimws(as.character(dt1$tc_mc_code))==trimws("-99999")),NA,as.character(dt1$tc_mc_code)))
+dt1$habitat_code <- as.factor(ifelse((trimws(as.character(dt1$habitat_code))==trimws("-99999")),NA,as.character(dt1$habitat_code)))
+dt1$count_per_m2 <- ifelse((trimws(as.character(dt1$count_per_m2))==trimws("-99999")),NA,dt1$count_per_m2)               
+suppressWarnings(dt1$count_per_m2 <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$count_per_m2))==as.character(as.numeric("-99999"))),NA,dt1$count_per_m2))
+dt1$species_count <- ifelse((trimws(as.character(dt1$species_count))==trimws("-99999")),NA,dt1$species_count)               
+suppressWarnings(dt1$species_count <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$species_count))==as.character(as.numeric("-99999"))),NA,dt1$species_count))
+
+
+# Here is the structure of the input data frame:
+str(dt1)                            
+attach(dt1)                            
+# The analyses below are basic descriptions of the variables. After testing, they should be replaced.                 
+
+summary(year)
+summary(wetland_code)
+summary(module_code)
+summary(tc_mc_code)
+summary(habitat_code)
+summary(count_per_m2)
+summary(species_count) 
+                # Get more details on character variables
+                 
+summary(as.factor(dt1$wetland_code)) 
+summary(as.factor(dt1$module_code)) 
+summary(as.factor(dt1$tc_mc_code)) 
+summary(as.factor(dt1$habitat_code))
+detach(dt1)               
+
+# Package ID: edi.647.3 Cataloging System:https://pasta.edirepository.org.
+# Data set title: UCSB SONGS Mitigation Monitoring: Wetland Survey - Fish Abundance.
+# Data set creator:  Stephen Schroeter -  
+# Data set creator:  Henry Page -  
+# Data set creator:  Daniel Reed -  
+# Data set creator:  David Huang -  
+# Data set creator:    - SONGS Mitigation Monitoring 
+# Contact:    - Information Manager, SONGS Mitigation Monitoring Project   - songsmmp@lifesci.ucsb.edu
+# Stylesheet v2.11 for metadata conversion into program: John H. Porter, Univ. Virginia, jporter@virginia.edu 
+
+inUrl1  <- "https://pasta.lternet.edu/package/data/eml/edi/647/3/8c3e35d92cb89c98514df81d6260e270" 
+infile1 <- tempfile()
+try(download.file(inUrl1,infile1,method="curl"))
+if (is.na(file.size(infile1))) download.file(inUrl1,infile1,method="auto")
+
+                   
+ dt1 <-read.csv(infile1,header=F 
+          ,skip=1
+            ,sep=","  
+        , col.names=c(
+                    "year",     
+                    "date",     
+                    "survey",     
+                    "wetland_code",     
+                    "area_code",     
+                    "module_code",     
+                    "tc_mc_code",     
+                    "habitat_code",     
+                    "enclosure_number",     
+                    "sampling_station_label",     
+                    "depth",     
+                    "haul_no",     
+                    "species_id",     
+                    "species_code",     
+                    "genus_name",     
+                    "species_name",     
+                    "count",     
+                    "enclosure_area"    ), check.names=TRUE)
+               
+unlink(infile1)
+		    
+# Fix any interval or ratio columns mistakenly read in as nominal and nominal columns read as numeric or dates read as strings
+                
+if (class(dt1$date)!="factor") dt1$date<- as.factor(dt1$date)
+if (class(dt1$survey)!="factor") dt1$survey<- as.factor(dt1$survey)
+if (class(dt1$wetland_code)!="factor") dt1$wetland_code<- as.factor(dt1$wetland_code)
+if (class(dt1$area_code)!="factor") dt1$area_code<- as.factor(dt1$area_code)
+if (class(dt1$module_code)!="factor") dt1$module_code<- as.factor(dt1$module_code)
+if (class(dt1$tc_mc_code)!="factor") dt1$tc_mc_code<- as.factor(dt1$tc_mc_code)
+if (class(dt1$habitat_code)!="factor") dt1$habitat_code<- as.factor(dt1$habitat_code)
+if (class(dt1$enclosure_number)!="factor") dt1$enclosure_number<- as.factor(dt1$enclosure_number)
+if (class(dt1$sampling_station_label)!="factor") dt1$sampling_station_label<- as.factor(dt1$sampling_station_label)
+if (class(dt1$depth)=="factor") dt1$depth <-as.numeric(levels(dt1$depth))[as.integer(dt1$depth) ]               
+if (class(dt1$depth)=="character") dt1$depth <-as.numeric(dt1$depth)
+if (class(dt1$haul_no)!="factor") dt1$haul_no<- as.factor(dt1$haul_no)
+if (class(dt1$species_id)!="factor") dt1$species_id<- as.factor(dt1$species_id)
+if (class(dt1$species_code)!="factor") dt1$species_code<- as.factor(dt1$species_code)
+if (class(dt1$genus_name)!="factor") dt1$genus_name<- as.factor(dt1$genus_name)
+if (class(dt1$species_name)!="factor") dt1$species_name<- as.factor(dt1$species_name)
+if (class(dt1$count)=="factor") dt1$count <-as.numeric(levels(dt1$count))[as.integer(dt1$count) ]               
+if (class(dt1$count)=="character") dt1$count <-as.numeric(dt1$count)
+if (class(dt1$enclosure_area)=="factor") dt1$enclosure_area <-as.numeric(levels(dt1$enclosure_area))[as.integer(dt1$enclosure_area) ]               
+if (class(dt1$enclosure_area)=="character") dt1$enclosure_area <-as.numeric(dt1$enclosure_area)
+                
+# Convert Missing Values to NA for non-dates
+                
+dt1$date <- as.factor(ifelse((trimws(as.character(dt1$date))==trimws("-99999")),NA,as.character(dt1$date)))
+dt1$survey <- as.factor(ifelse((trimws(as.character(dt1$survey))==trimws("-99999")),NA,as.character(dt1$survey)))
+dt1$wetland_code <- as.factor(ifelse((trimws(as.character(dt1$wetland_code))==trimws("-99999")),NA,as.character(dt1$wetland_code)))
+dt1$area_code <- as.factor(ifelse((trimws(as.character(dt1$area_code))==trimws("-99999")),NA,as.character(dt1$area_code)))
+dt1$module_code <- as.factor(ifelse((trimws(as.character(dt1$module_code))==trimws("-99999")),NA,as.character(dt1$module_code)))
+dt1$tc_mc_code <- as.factor(ifelse((trimws(as.character(dt1$tc_mc_code))==trimws("-99999")),NA,as.character(dt1$tc_mc_code)))
+dt1$habitat_code <- as.factor(ifelse((trimws(as.character(dt1$habitat_code))==trimws("-99999")),NA,as.character(dt1$habitat_code)))
+dt1$enclosure_number <- as.factor(ifelse((trimws(as.character(dt1$enclosure_number))==trimws("-99999")),NA,as.character(dt1$enclosure_number)))
+dt1$sampling_station_label <- as.factor(ifelse((trimws(as.character(dt1$sampling_station_label))==trimws("-99999")),NA,as.character(dt1$sampling_station_label)))
+dt1$depth <- ifelse((trimws(as.character(dt1$depth))==trimws("-99999")),NA,dt1$depth)               
+suppressWarnings(dt1$depth <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$depth))==as.character(as.numeric("-99999"))),NA,dt1$depth))
+dt1$haul_no <- as.factor(ifelse((trimws(as.character(dt1$haul_no))==trimws("-99999")),NA,as.character(dt1$haul_no)))
+dt1$species_id <- as.factor(ifelse((trimws(as.character(dt1$species_id))==trimws("-99999")),NA,as.character(dt1$species_id)))
+dt1$species_code <- as.factor(ifelse((trimws(as.character(dt1$species_code))==trimws("-99999")),NA,as.character(dt1$species_code)))
+dt1$genus_name <- as.factor(ifelse((trimws(as.character(dt1$genus_name))==trimws("-99999")),NA,as.character(dt1$genus_name)))
+dt1$species_name <- as.factor(ifelse((trimws(as.character(dt1$species_name))==trimws("-99999")),NA,as.character(dt1$species_name)))
+dt1$count <- ifelse((trimws(as.character(dt1$count))==trimws("-99999")),NA,dt1$count)               
+suppressWarnings(dt1$count <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$count))==as.character(as.numeric("-99999"))),NA,dt1$count))
+dt1$enclosure_area <- ifelse((trimws(as.character(dt1$enclosure_area))==trimws("-99999")),NA,dt1$enclosure_area)               
+suppressWarnings(dt1$enclosure_area <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$enclosure_area))==as.character(as.numeric("-99999"))),NA,dt1$enclosure_area))
+
+
+# Here is the structure of the input data frame:
+str(dt1)                            
+attach(dt1)                            
+# The analyses below are basic descriptions of the variables. After testing, they should be replaced.                 
+
+summary(year)
+summary(date)
+summary(survey)
+summary(wetland_code)
+summary(area_code)
+summary(module_code)
+summary(tc_mc_code)
+summary(habitat_code)
+summary(enclosure_number)
+summary(sampling_station_label)
+summary(depth)
+summary(haul_no)
+summary(species_id)
+summary(species_code)
+summary(genus_name)
+summary(species_name)
+summary(count)
+summary(enclosure_area) 
+                # Get more details on character variables
+                 
+summary(as.factor(dt1$date)) 
+summary(as.factor(dt1$survey)) 
+summary(as.factor(dt1$wetland_code)) 
+summary(as.factor(dt1$area_code)) 
+summary(as.factor(dt1$module_code)) 
+summary(as.factor(dt1$tc_mc_code)) 
+summary(as.factor(dt1$habitat_code)) 
+summary(as.factor(dt1$enclosure_number)) 
+summary(as.factor(dt1$sampling_station_label)) 
+summary(as.factor(dt1$haul_no)) 
+summary(as.factor(dt1$species_id)) 
+summary(as.factor(dt1$species_code)) 
+summary(as.factor(dt1$genus_name)) 
+summary(as.factor(dt1$species_name))
+detach(dt1)               
+         
+# seine data:
+inUrl2  <- "https://pasta.lternet.edu/package/data/eml/edi/647/3/44dc7a48b659dcc41e145ee5135d0947" 
+infile2 <- tempfile()
+try(download.file(inUrl2,infile2,method="curl"))
+if (is.na(file.size(infile2))) download.file(inUrl2,infile2,method="auto")
+
+                   
+ dt2 <-read.csv(infile2,header=F 
+          ,skip=1
+            ,sep=","  
+        , col.names=c(
+                    "year",     
+                    "survey",     
+                    "date",     
+                    "wetland_code",     
+                    "module_code",     
+                    "tc_mc_code",     
+                    "habitat_code",     
+                    "seine_section_code",     
+                    "seine_label",     
+                    "seine_sample_width",     
+                    "seine_sample_length",     
+                    "seine_sample_area",     
+                    "depth",     
+                    "haul_no",     
+                    "species_id",     
+                    "species_code",     
+                    "genus_name",     
+                    "species_name",     
+                    "count"    ), check.names=TRUE)
+               
+unlink(infile2)
+		    
+# Fix any interval or ratio columns mistakenly read in as nominal and nominal columns read as numeric or dates read as strings
+                
+if (class(dt2$survey)!="factor") dt2$survey<- as.factor(dt2$survey)
+if (class(dt2$date)!="factor") dt2$date<- as.factor(dt2$date)
+if (class(dt2$wetland_code)!="factor") dt2$wetland_code<- as.factor(dt2$wetland_code)
+if (class(dt2$module_code)!="factor") dt2$module_code<- as.factor(dt2$module_code)
+if (class(dt2$tc_mc_code)!="factor") dt2$tc_mc_code<- as.factor(dt2$tc_mc_code)
+if (class(dt2$habitat_code)!="factor") dt2$habitat_code<- as.factor(dt2$habitat_code)
+if (class(dt2$seine_section_code)!="factor") dt2$seine_section_code<- as.factor(dt2$seine_section_code)
+if (class(dt2$seine_label)!="factor") dt2$seine_label<- as.factor(dt2$seine_label)
+if (class(dt2$seine_sample_width)=="factor") dt2$seine_sample_width <-as.numeric(levels(dt2$seine_sample_width))[as.integer(dt2$seine_sample_width) ]               
+if (class(dt2$seine_sample_width)=="character") dt2$seine_sample_width <-as.numeric(dt2$seine_sample_width)
+if (class(dt2$seine_sample_length)=="factor") dt2$seine_sample_length <-as.numeric(levels(dt2$seine_sample_length))[as.integer(dt2$seine_sample_length) ]               
+if (class(dt2$seine_sample_length)=="character") dt2$seine_sample_length <-as.numeric(dt2$seine_sample_length)
+if (class(dt2$seine_sample_area)=="factor") dt2$seine_sample_area <-as.numeric(levels(dt2$seine_sample_area))[as.integer(dt2$seine_sample_area) ]               
+if (class(dt2$seine_sample_area)=="character") dt2$seine_sample_area <-as.numeric(dt2$seine_sample_area)
+if (class(dt2$depth)=="factor") dt2$depth <-as.numeric(levels(dt2$depth))[as.integer(dt2$depth) ]               
+if (class(dt2$depth)=="character") dt2$depth <-as.numeric(dt2$depth)
+if (class(dt2$haul_no)!="factor") dt2$haul_no<- as.factor(dt2$haul_no)
+if (class(dt2$species_id)!="factor") dt2$species_id<- as.factor(dt2$species_id)
+if (class(dt2$species_code)!="factor") dt2$species_code<- as.factor(dt2$species_code)
+if (class(dt2$genus_name)!="factor") dt2$genus_name<- as.factor(dt2$genus_name)
+if (class(dt2$species_name)!="factor") dt2$species_name<- as.factor(dt2$species_name)
+if (class(dt2$count)=="factor") dt2$count <-as.numeric(levels(dt2$count))[as.integer(dt2$count) ]               
+if (class(dt2$count)=="character") dt2$count <-as.numeric(dt2$count)
+                
+# Convert Missing Values to NA for non-dates
+                
+dt2$survey <- as.factor(ifelse((trimws(as.character(dt2$survey))==trimws("-99999")),NA,as.character(dt2$survey)))
+dt2$date <- as.factor(ifelse((trimws(as.character(dt2$date))==trimws("-99999")),NA,as.character(dt2$date)))
+dt2$wetland_code <- as.factor(ifelse((trimws(as.character(dt2$wetland_code))==trimws("-99999")),NA,as.character(dt2$wetland_code)))
+dt2$module_code <- as.factor(ifelse((trimws(as.character(dt2$module_code))==trimws("-99999")),NA,as.character(dt2$module_code)))
+dt2$tc_mc_code <- as.factor(ifelse((trimws(as.character(dt2$tc_mc_code))==trimws("-99999")),NA,as.character(dt2$tc_mc_code)))
+dt2$habitat_code <- as.factor(ifelse((trimws(as.character(dt2$habitat_code))==trimws("-99999")),NA,as.character(dt2$habitat_code)))
+dt2$seine_section_code <- as.factor(ifelse((trimws(as.character(dt2$seine_section_code))==trimws("-99999")),NA,as.character(dt2$seine_section_code)))
+dt2$seine_label <- as.factor(ifelse((trimws(as.character(dt2$seine_label))==trimws("-99999")),NA,as.character(dt2$seine_label)))
+dt2$seine_sample_width <- ifelse((trimws(as.character(dt2$seine_sample_width))==trimws("-99999")),NA,dt2$seine_sample_width)               
+suppressWarnings(dt2$seine_sample_width <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$seine_sample_width))==as.character(as.numeric("-99999"))),NA,dt2$seine_sample_width))
+dt2$seine_sample_length <- ifelse((trimws(as.character(dt2$seine_sample_length))==trimws("-99999")),NA,dt2$seine_sample_length)               
+suppressWarnings(dt2$seine_sample_length <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$seine_sample_length))==as.character(as.numeric("-99999"))),NA,dt2$seine_sample_length))
+dt2$seine_sample_area <- ifelse((trimws(as.character(dt2$seine_sample_area))==trimws("-99999")),NA,dt2$seine_sample_area)               
+suppressWarnings(dt2$seine_sample_area <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$seine_sample_area))==as.character(as.numeric("-99999"))),NA,dt2$seine_sample_area))
+dt2$depth <- ifelse((trimws(as.character(dt2$depth))==trimws("-99999")),NA,dt2$depth)               
+suppressWarnings(dt2$depth <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$depth))==as.character(as.numeric("-99999"))),NA,dt2$depth))
+dt2$haul_no <- as.factor(ifelse((trimws(as.character(dt2$haul_no))==trimws("-99999")),NA,as.character(dt2$haul_no)))
+dt2$species_id <- as.factor(ifelse((trimws(as.character(dt2$species_id))==trimws("-99999")),NA,as.character(dt2$species_id)))
+dt2$species_code <- as.factor(ifelse((trimws(as.character(dt2$species_code))==trimws("-99999")),NA,as.character(dt2$species_code)))
+dt2$genus_name <- as.factor(ifelse((trimws(as.character(dt2$genus_name))==trimws("-99999")),NA,as.character(dt2$genus_name)))
+dt2$species_name <- as.factor(ifelse((trimws(as.character(dt2$species_name))==trimws("-99999")),NA,as.character(dt2$species_name)))
+dt2$count <- ifelse((trimws(as.character(dt2$count))==trimws("-99999")),NA,dt2$count)               
+suppressWarnings(dt2$count <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$count))==as.character(as.numeric("-99999"))),NA,dt2$count))
+
+
+# Here is the structure of the input data frame:
+str(dt2) 
+attach(dt2)                            
+# The analyses below are basic descriptions of the variables. After testing, they should be replaced.                 
+
+summary(year)
+summary(survey)
+summary(date)
+summary(wetland_code)
+summary(module_code)
+summary(tc_mc_code)
+summary(habitat_code)
+summary(seine_section_code)
+summary(seine_label)
+summary(seine_sample_width)
+summary(seine_sample_length)
+summary(seine_sample_area)
+summary(depth)
+summary(haul_no)
+summary(species_id)
+summary(species_code)
+summary(genus_name)
+summary(species_name)
+summary(count) 
+                # Get more details on character variables
+                 
+summary(as.factor(dt2$survey)) 
+summary(as.factor(dt2$date)) 
+summary(as.factor(dt2$wetland_code)) 
+summary(as.factor(dt2$module_code)) 
+summary(as.factor(dt2$tc_mc_code)) 
+summary(as.factor(dt2$habitat_code)) 
+summary(as.factor(dt2$seine_section_code)) 
+summary(as.factor(dt2$seine_label)) 
+summary(as.factor(dt2$haul_no)) 
+summary(as.factor(dt2$species_id)) 
+summary(as.factor(dt2$species_code)) 
+summary(as.factor(dt2$genus_name)) 
+summary(as.factor(dt2$species_name))
+detach(dt2)               
+        
+### end pre-written code from ERI website ###
+
+view(dt2)
+
+dt2 %>% 
+  filter(wetland_code == "CSM") %>% 
+  group_by(date) %>% 
+  summarize(count = sum(count)) %>% 
+  view()
+
+dt2 %>% 
+  filter(wetland_code == "CSM", species_code == "URHA") %>%
+  group_by(date) %>% 
+  summarize(count = sum(count)) %>% 
+  ggplot(aes(x = date, y = count)) +
+    geom_point()
 ```
 
 ## Dataframe without 2019
