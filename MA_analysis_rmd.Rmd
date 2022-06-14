@@ -789,29 +789,33 @@ cabrillo_dat <- cabrillo_dat_raw %>%
 daily_3yr_dat <- left_join(daily_3yr_dat, cabrillo_dat, by = "mdy")
 ```
 
-## CSULB SST data
+## CSULB data
 ```{r}
 padaro_sst_19_raw <- read.csv("data_raw/CSULB/CSULB Shark Buoys_SST.csv")
-#view(padaro_sst)
+View(padaro_sst_19_raw)
+#this is SST from one buoy from 2019-2020
 
 padaro_sst_19 <- padaro_sst_19_raw %>% 
   rename(sst = 33) %>% 
   rename(datetime_UTC = 1) %>% 
   filter(!is.na(sst)) %>% 
   filter(year(datetime_UTC) == 2019)
-#this looks like SST from one buoy from 2019-2020
+View(padaro_sst_19)
 
 filtered_temp_20_21 <- read.csv("data_raw/CSULB/All_2020-2021_filtered_temp_data.csv")
-#view(filtered_temp_20_21)
+View(filtered_temp_20_21)
 
 padaro_sst_20_21 <- filtered_temp_20_21 %>% 
-  filter(Station == "JWS_Padaro_Buoy") %>% 
+  filter(Station == "JWS_Padaro_Buoy") %>%
+  filter(LoggerDepth_m == 1) %>%
   rename(sst = 6) %>% 
   rename(datetime_UTC = 1)
+View(padaro_sst_20_21)
 
 padaro_sst_raw <- bind_rows(padaro_sst_19, padaro_sst_20_21)
-#str(padaro_sst)
-#view(padaro_sst)
+View(padaro_sst_raw)
+write.csv(padaro_sst_raw, "data/padaro_sst_raw.csv")
+
 padaro_sst <- padaro_sst_raw %>%
   mutate(datetime_UTC = as_datetime(datetime_UTC)) %>% 
   mutate(datetime_PST = force_tz(datetime_UTC, tzone = "America/Los_Angeles")) %>%
@@ -820,9 +824,105 @@ padaro_sst <- padaro_sst_raw %>%
   rename(date = 1, hour = 2) %>% 
   mutate(date_hour = make_datetime(year(date), month(date), day(date), hour))
 
+View(padaro_sst)
 write.csv(padaro_sst, "data/padaro_sst.csv")
 
-daily_3yr_dat <- left_join(daily_3yr_dat, padaro_sst, by = "date_hour")
+daily_3yr_dat_temp <- left_join(daily_3yr_dat, padaro_sst, by = "date_hour")
+
+ggplot(daily_3yr_dat, aes(x = date_hour)) +
+  geom_point(aes(y = sst)) +
+  geom_point(aes(y = Temp_top), color = "red") +
+  ylim(c(0,26))
+
+daily_3yr_dat <- daily_3yr_dat %>% 
+  filter(Temp_top < 100)
+  
+daily_3yr_dat %>% 
+  ggplot(aes(x = Temp_top, y = sst)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+lter_vs_csulb_lm <- lm(Temp_top ~ sst, data = daily_3yr_dat)
+summary(lter_vs_csulb_lm)
+
+cor.test(daily_3yr_dat$Temp_top, daily_3yr_dat$sst, method = "pearson")
+#0.66 correlation coefficient btwn CSULB and LTER data
+
+padaro_SFT_raw <- read.csv("data_raw/CSULB/CSULB Shark Buoys_SFT.csv")
+View(padaro_SFT_raw)
+str(padaro_SFT_raw)
+
+#filter(Sensor == "aquaMeasure-670473") %>%
+padaro_SFT_DO <- padaro_SFT_raw %>%
+  rename(datetime_UTC = 1) %>% 
+  rename(sft = 8) %>%
+  rename(DO = 13) %>% 
+  mutate(datetime_UTC = as_datetime(datetime_UTC)) %>% 
+  mutate(datetime_PST = force_tz(datetime_UTC, tzone = "America/Los_Angeles")) %>%
+  group_by(date(datetime_PST), hour(datetime_PST)) %>% 
+  summarize(sft = mean(sft, na.rm = TRUE), DO = mean(DO, na.rm = TRUE)) %>% 
+  rename(date = 1, hour = 2) %>% 
+  mutate(date_hour = make_datetime(year(date), month(date), day(date), hour))
+
+daily_3yr_dat_temp <- left_join(daily_3yr_dat_temp, padaro_SFT_DO, by = "date_hour")
+View(daily_3yr_dat_temp)
+
+ggplot(daily_3yr_dat_temp, aes(x = date)) +
+  geom_point(aes(y = sst))
+```
+
+## CSULB data, take 2
+```{r}
+#2019 SST:
+sst_2019_raw <- read.csv("data_raw/CSULB/2019_Live_buoy_SST.csv")
+View(sst_2019_raw)
+
+#2019 SFT:
+sft_2019_raw <- read.csv("data_raw/CSULB/2019_Live_buoy_SFT.csv")
+View(sft_2019_raw)
+
+#Check deployment log:
+temp_deployment <- read.csv("data_raw/CSULB/JWS Receiver Deployment Log - Temperature_Log.csv")
+View(temp_deployment)
+
+#filtered temp data for 2020 and 2021:
+filtered_temp_20_21_raw <- read.csv("data_raw/CSULB/All_2020-2021_filtered_temp_data.csv")
+View(filtered_temp_20_21_raw)
+
+station_filtered_20_21 <- filtered_temp_20_21_raw %>% 
+  filter(Station == "JWS_SantaClaus_OS1" | Station == "JWS_SantaClaus_OS2" | 
+         Station == "JWS_Padaro_Inshore_A" | Station == "JWS_Padaro_Inshore_B" |
+         Station == "JWS_Padaro_Inshore_C" | Station == "JWS_Padaro_Inshore_D") %>% 
+  mutate(depth_level = if_else(LoggerDepth_m > 1, "sft", "sst")) %>% 
+  select(!c(3:5)) %>% 
+  mutate(DateTimeUTC = as_datetime(DateTimeUTC))
+
+View(station_filtered_20_21)
+
+sst_20_21 <- station_filtered_20_21 %>% 
+  filter(depth_level == "sst") %>% 
+  group_by(date(DateTimeUTC), hour(DateTimeUTC)) %>% 
+  summarize(sst = mean(Temp_C)) %>%
+  ungroup() %>%
+  rename(date = 1, hour = 2) %>% 
+  mutate(date = as_date(date)) %>% 
+  mutate(date_hour = make_datetime(year(date), month(date), day(date), hour)) %>% 
+  select(!c(1,2))
+
+sft_20_21 <- station_filtered_20_21 %>% 
+  filter(depth_level == "sft") %>% 
+  group_by(date(DateTimeUTC), hour(DateTimeUTC)) %>% 
+  summarize(sft = mean(Temp_C)) %>%
+  ungroup() %>%
+  rename(date = 1, hour = 2) %>% 
+  mutate(date = as_date(date)) %>% 
+  mutate(date_hour = make_datetime(year(date), month(date), day(date), hour)) %>% 
+  select(!c(1,2))
+
+sft_sst_20_21 <- left_join(sft_20_21, sst_20_21, by = "date_hour")
+
+ggplot(sft_sst_20_21, aes(x = sst, y = sft)) + 
+  
 ```
 
 ## ERI SONGS data
@@ -1180,6 +1280,9 @@ dt2 %>%
 ```{r}
 dat_no_19 <- daily_3yr_dat %>% 
   filter(year != 2019)
+  
+
+View(daily_3yr_dat)
 ```
 
 =============================================================================
