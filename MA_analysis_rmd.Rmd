@@ -10,7 +10,7 @@ editor_options:
 #Setup
 ```{r, eval=FALSE}
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", "plyr", "broom.mixed", "ggthemes", "padr", "ptest", "maps", "mapdata", "hexbin", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr"))
-#install.packages("slider")
+#install.packages("cowplot")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -605,13 +605,13 @@ daily_3yr_dat <- daily_3yr_dat %>%
   mutate(day = yday(datetime)) %>% 
   mutate(day2 = (yday(datetime))^2)
 
-View(daily_3yr_dat)
+#View(daily_3yr_dat)
 ```
 
 ### Reading in Carp LTER data
 ```{r}
 lter_dat_raw <- read.csv("data_raw/lter_dat.csv")
-View(lter_dat_raw)
+#View(lter_dat_raw)
 
 lter_dat <- lter_dat_raw %>% 
   filter(year > 2018) %>% 
@@ -621,18 +621,16 @@ lter_dat <- lter_dat_raw %>%
   mutate(date_hour = make_datetime(year, month, day, hour)) %>% 
   mutate(date_hour = force_tz(date_hour, tzone = "America/Los_Angeles")) %>%
   rename(day_of_month = day) %>% 
-  select(-c(1, 6:53, 58:75)) %>% 
-  select(!year) %>% 
-  select(!c(1:4, 6:20)) %>% 
   group_by(date_hour) %>% 
-  summarize(Temp_top = mean(Temp_top))
+  summarize(Temp_top = mean(Temp_top, na.rm = TRUE), salinity = mean(Salinity, na.rm = TRUE)) %>% 
+  filter(Temp_top < 100) %>% 
+  filter(salinity < 100)
 
 lter_dat %>% 
-  filter(Temp_top < 9000) %>% 
   filter(month(date_hour) == 8) %>% 
   filter(day(date_hour) == 29) %>% 
   filter(year(date_hour) == 2021) %>% 
-  ggplot(aes(x = date_hour, y = Temp_top)) +
+  ggplot(aes(x = date_hour, y = salinity)) +
     geom_point() +
     geom_smooth()
 ```
@@ -643,10 +641,10 @@ daily_3yr_dat_backup <- left_join(daily_3yr_dat, lter_dat, by = "date_hour")
 
 write.csv(daily_3yr_dat_backup, "data/daily_3yr_dat_backup.csv")
 
-View(daily_3yr_dat_backup)
+#View(daily_3yr_dat_backup)
 ```
 
-### Recovery of clean daily_3yr_dat (so you don't have to re-run everything if you mess it up)
+### Recovery of clean daily_3yr_dat (so you don't have to re-run everything above if you mess it up)
 ```{r}
 daily_3yr_dat <- read.csv("data/daily_3yr_dat_backup.csv")
 
@@ -682,33 +680,45 @@ joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
 #View(joined_3yr)
 ```
 
-## Adding size classes to daily 3yr dataframe
+## Adding size classes and inner/outer/manual to daily 3yr dataframe
 ```{r}
 #this is only needed if there are adjusted lengths from 2020/2021 transect flights:
-size_classed_3yr_20m_test <- joined_3yr %>%
-  filter(!is.na(length_adj_m)) %>%
-  filter(length_adj_m > 0) %>% 
-  group_by(date) %>%
-  dplyr::summarize(juvenile = sum(length_adj_m < 3), 
-                   adult = sum(length_adj_m >= 3),
-                   juvenile_20m = sum(length_adj_m < 3 & ifelse(year == "2019", length_adj_m > 0, (video_YN == "manual" | video_YN == "manual_1"))),
-                   adult_20m = sum(length_adj_m >= 3 & ifelse(year == "2019", length_adj_m > 0, (video_YN == "manual" | video_YN == "manual_1"))))
+#size_classed_3yr_20m_test <- joined_3yr %>%
+  #filter(!is.na(length_adj_m)) %>%
+  #filter(length_adj_m > 0) %>% 
+  #group_by(date) %>%
+  #dplyr::summarize(juvenile = sum(length_adj_m < 3), 
+                   #adult = sum(length_adj_m >= 3),
+                   #juvenile_20m = sum(length_adj_m < 3 &
+                                        #ifelse(year == "2019",
+                                               #length_adj_m > 0,
+                                               #(video_YN == "manual" | 
+                                                  #video_YN == "manual_1"))),
+                   #adult_20m = sum(length_adj_m >= 3 & ifelse(year == "2019", #length_adj_m > 0, (video_YN == "manual" | video_YN == "manual_1"))))
 
 #view(size_classed_3yr_20m_test)
 
-size_classed_3yr <- joined_3yr %>%
-  filter(!is.na(length_adj_m)) %>%
-  filter(length_adj_m > 0) %>% 
-  group_by(date) %>%
-  dplyr::summarize(juvenile = sum(length_adj_m < 3), 
-                   adult = sum(length_adj_m >= 3))
-
-#view(size_classed_3yr)
-
-ggplot(data = size_classed_3yr, aes(x = adult)) +
+ggplot(joined_3yr, aes(x = video_YN)) +
   geom_bar()
 
+#View(joined_3yr)
+
+size_classed_3yr <- joined_3yr %>%
+  group_by(date) %>%
+  dplyr::summarize(juvenile = sum(length_adj_m < 3 & length_adj_m > 0, na.rm = TRUE), 
+                   adult = sum(length_adj_m >= 3, na.rm = TRUE),
+                   inner_count = sum(video_YN == "inner", na.rm = TRUE),
+                   outer_count = sum(video_YN == "outer", na.rm = TRUE) + 
+                                 sum(video_YN == "outer ", na.rm = TRUE),
+                   manual_count = sum(video_YN == "manual", na.rm = TRUE) +
+                                  sum(video_YN == "manual_1", na.rm = TRUE) +
+                                  sum(video_YN == "manual_2", na.rm = TRUE))
+
+#ggplot(data = size_classed_3yr, aes(x = adult)) +
+  #geom_bar()
+
 daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
+#View(daily_3yr_dat)
 
 daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(juvenile = ifelse(is.na(juvenile), 0, juvenile)) %>% 
@@ -720,7 +730,7 @@ daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(area_20m = ifelse(year == 2019, 
                            transect_area_km2, manual_area_km2))
 
-View(daily_3yr_dat)
+#View(daily_3yr_dat)
 ```
 
 ## Code for columns with manual only (2020/2021) and transect only (2019) juvenile and adult counts, plus a column for the area of the appropriate survey (don't run, this is just leftover from when I thought it was needed - see above note)
@@ -768,7 +778,7 @@ scripps_dat <- scripps_dat_raw %>%
                mutate(temp = as.numeric(temperature)) %>% 
                mutate(mdy = as_date(time)) %>%
                group_by(mdy) %>% 
-               summarize(scripps_temp = mean(temp)) %>% 
+               summarize(scripps_temp = mean(temp, na.rm = TRUE)) %>% 
                mutate(scripps_temp_1wk = lag(scripps_temp, n = 7)) %>% 
                mutate(scripps_temp_2wk = lag(scripps_temp, n = 14)) %>%
                mutate(scripps_temp_3wk = lag(scripps_temp, n = 21)) %>%
@@ -791,7 +801,7 @@ cabrillo_dat <- cabrillo_dat_raw %>%
                mutate(temp = as.numeric(sea_water_temperature)) %>% 
                mutate(mdy = as_date(time)) %>% 
                group_by(mdy) %>% 
-               summarize(cabrillo_temp = mean(temp)) %>% 
+               summarize(cabrillo_temp = mean(temp, na.rm = TRUE)) %>% 
                mutate(cabrillo_temp_1wk = lag(cabrillo_temp, n = 7)) %>% 
                mutate(cabrillo_temp_2wk = lag(cabrillo_temp, n = 14)) %>%
                mutate(cabrillo_temp_3wk = lag(cabrillo_temp, n = 21)) %>%
@@ -848,11 +858,11 @@ sft_19 <- sft_19 %>%
   rename(sft = Temp_C, date_hour = DateTimePST) %>% 
   select(!c(1,3,4,6:11)) %>% 
   group_by(date_hour) %>% 
-  summarize(sft = mean(sft))
+  summarize(sft = mean(sft, na.rm = TRUE))
 
 #filtered temp data for 2020 and 2021:
 filtered_temp_20_21_raw <- read.csv("data_raw/CSULB/All_2020-2021_filtered_temp_data.csv")
-View(filtered_temp_20_21_raw)
+#View(filtered_temp_20_21_raw)
 
 station_filtered_20_21 <- filtered_temp_20_21_raw %>% 
   filter(Station == "JWS_SantaClaus_OS1" | Station == "JWS_SantaClaus_OS2" | 
@@ -867,18 +877,19 @@ station_filtered_20_21 <- filtered_temp_20_21_raw %>%
 sst_20_21 <- station_filtered_20_21 %>% 
   filter(depth_level == "sst") %>% 
   group_by(date(DateTimeUTC), hour(DateTimeUTC)) %>% 
-  summarize(sst = mean(Temp_C)) %>%
+  summarize(sst = mean(Temp_C, na.rm = TRUE)) %>%
   ungroup() %>%
   rename(date = 1, hour = 2) %>% 
   mutate(date = as_date(date)) %>% 
-  mutate(date_hour = make_datetime(year(date), month(date), day(date), hour)) %>% 
+  mutate(date_hour = make_datetime(year(date), month(date),
+                                   day(date), hour)) %>% 
   select(!c(1,2)) %>% 
   mutate(date_hour = force_tz(date_hour, tzone = "America/Los_Angeles"))
 
 sft_20_21 <- station_filtered_20_21 %>% 
   filter(depth_level == "sft") %>% 
   group_by(date(DateTimeUTC), hour(DateTimeUTC)) %>% 
-  summarize(sft = mean(Temp_C)) %>%
+  summarize(sft = mean(Temp_C, na.rm = TRUE)) %>%
   ungroup() %>%
   rename(date = 1, hour = 2) %>% 
   mutate(date = as_date(date)) %>% 
@@ -917,7 +928,30 @@ daily_3yr_dat <- left_join(daily_3yr_dat, sft_19_20_21, by = "date_hour")
 daily_3yr_dat <- left_join(daily_3yr_dat, sst_20_21, by = "date_hour")
 ```
 
-## ERI SONGS data
+### Adding NOAA satelite chlorophyll data
+```{r}
+chl_dat_raw <- read.csv("data_raw/chl_dat.csv")
+#View(chl_dat_raw)
+
+chl_dat <- chl_dat_raw %>% 
+  slice(-1) %>%
+  mutate(long = as.numeric(longitude)) %>%
+  mutate(lat = as.numeric(latitude)) %>%
+  mutate(chl = as.numeric(chlorophyll)) %>% 
+  mutate(long = round(long, digits = 4)) %>% 
+  mutate(lat = round(lat, digits = 4)) %>%
+  filter(lat == 34.4 | lat == 34.4125) %>% 
+  filter(long == -119.5625 | long == -119.5500) %>%
+  filter(!(lat == 34.4125 & long == -119.5500)) %>% 
+  group_by(time) %>%
+  summarize(chl = mean(chl, na.rm = TRUE)) %>% 
+  mutate(mdy = as_date(time), time = NULL)
+View(chl_dat)
+
+daily_3yr_dat <- left_join(daily_3yr_dat, chl_dat, by = "mdy")
+```
+
+## ERI SONGS data - DNR
 ```{r}
 ### pre-written code from ERI website ###
 
@@ -1736,16 +1770,16 @@ mean(transect_rate$rate)
 
 ### Visualizing manual vs transect metrics - data prep
 ```{r}
-manual_counts <- mutate(manual_counts, value = count*10, method = "manual", metric = "count")
-transect_counts <- mutate(transect_counts, value = count*10, method = "transect", metric = "count")
-manual_dens <- mutate(manual_dens, value = density, method = "manual", metric = "density")
-transect_dens <- mutate(transect_dens, value = density, method = "transect", metric = "density")
-manual_rate <- mutate(manual_rate, value = rate*100, method = "manual", metric = "rate")
-transect_rate <- mutate(transect_rate, value = rate*100, method = "transect", metric = "rate")
+manual_counts <- mutate(manual_counts, value = count*10, method = "manual", metric = "Count")
+transect_counts <- mutate(transect_counts, value = count*10, method = "transect", metric = "Count")
+manual_dens <- mutate(manual_dens, value = density, method = "manual", metric = "Density")
+transect_dens <- mutate(transect_dens, value = density, method = "transect", metric = "Density")
+manual_rate <- mutate(manual_rate, value = rate*100, method = "manual", metric = "Rate")
+transect_rate <- mutate(transect_rate, value = rate*100, method = "transect", metric = "Rate")
 
 comp_vis_dat <- bind_rows(manual_counts, transect_counts, manual_dens, transect_dens, manual_rate, transect_rate)
 
-View(comp_vis_dat)
+#View(comp_vis_dat)
 ```
 
 ### Manual vs Transect 3 metric comparison plot (for thesis):
@@ -1753,7 +1787,8 @@ View(comp_vis_dat)
 method_comp_plot_final <- ggplot(comp_vis_dat, aes(x = metric, y = value)) +
   geom_boxplot(aes(color = method)) +
   theme_cowplot() +
-  scale_color_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2",
+                     labels = c("Manual", "Transect")) +
   geom_point(aes(y = 139, shape = metric)) +
   scale_shape_manual(values = c(8, NA, NA)) + #significance asterisk
   guides(shape = "none") + 
@@ -1762,7 +1797,7 @@ method_comp_plot_final <- ggplot(comp_vis_dat, aes(x = metric, y = value)) +
   labs(x = "Metric", y = "Value", color = "Method")
 
 method_comp_plot_final
-ggsave("plots/method_comp_plot_final.png")
+ggsave("plots/method_comp_plot_final.png", width = 6, heigh = 7)
 # count is scaled up by a factor of 10 and rate is scaled up by a factor of 100. Only sig diff is count.
 ```
 
@@ -2270,7 +2305,7 @@ dredge(season_glm_man)
 ### first off, a justification of ASL and Depth corrections:
 ```{r}
 BOI_1_sub_dat <- read.csv("data_raw/csulb_tests_nov_14/BOI_1_submerged_JP_calculations.csv")
-View(BOI_1_sub_dat)
+#View(BOI_1_sub_dat)
 
 BOI_1_sub_dat$test_alt <- as.factor(as.character(BOI_1_sub_dat$test_alt))
 
@@ -2314,6 +2349,8 @@ margin_of_error # 0.01136 m
 #95% ci:
 mean_size - margin_of_error #1.925 m
 mean_size + margin_of_error #1.948 m
+
+mean_size
 
 known_size_pvc <- 1.97
 
@@ -2684,7 +2721,19 @@ gam_dat_lb <- daily_3yr_dat %>%
   filter(!is.na(tide)) %>%                                
   filter(!is.na(sft)) %>%   
   filter(!is.na(WVHT)) %>%
+  filter(!is.na(salinity)) %>%
+  filter(!is.na(chl)) %>%
   filter(!is.na(transect_area_km2))
+View(gam_dat_lb)
+
+gam_dat_lb_full <- daily_3yr_dat %>%
+  mutate(year = as.factor(as.character(year))) %>%
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
+  mutate(month = month(mdy)) 
+  
 
 gam_dat3 <- daily_3yr_dat %>% 
   mutate(hour = as.numeric(hour(date_hour))) %>%
@@ -2970,16 +3019,16 @@ anova.gam(gam3)
 ### "Local" month model with year interaction only for hour and month (no N and S temps) - CARP LTER SFT DATA
 ```{r}
 gam4 <- mgcv::gam(transect_total ~ year +
-                                   s(hour, k = 10, by = year) +
-                                   s(month, k = 8, by = year) +
+                                   s(hour, by = year) +
+                                   s(month, by = year) +
                                    beaufort +
                                    vis +
-                                   s(tide, k = 10) +
-                                   s(Temp_top, k = 10) +
-                                   s(WVHT, k = 50) +
+                                   s(tide) +
+                                   s(Temp_top) +
+                                   s(WVHT) +
                                    offset(transect_area_km2),
                   data = gam_dat2, method = "REML",
-                  family = nb, select = TRUE, na.action = "na.fail")
+                  family = nb, select = TRUE)
 #select = TRUE does automated term penalization to remove terms that are "infinitely smooth"
 
 summary(gam4)
@@ -3043,8 +3092,9 @@ gam4lb <- mgcv::gam(transect_total ~ year +
                                    s(tide, k = 10) +
                                    s(sft, k = 10) +
                                    s(WVHT, k = 50) +
+                                   s(chl) +
                                    offset(transect_area_km2),
-                  data = gam_dat_lb, method = "REML", family = nb, select = TRUE, na.action = "na.fail")
+                  data = gam_dat_lb_full, method = "REML", family = nb, select = TRUE)
 #select = TRUE does automated term penalization to remove terms that are "infinitely smooth"
 #REML for (relatively) small dataset
 
@@ -3059,17 +3109,17 @@ anova.gam(gam4lb)
 #p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
 #year, beaufort, and vis are all significant as parametric terms (see post-hoc tests below)
 #sft, month (all years) and hour (2020 and 2021) significant.
-#tide WVHT n.s.
+#tide, WVHT, salinity n.s.
 
 visreg(gam4lb)
 
 plot(gam4lb)
 
-gam4lb_dredge_drop1 <- dredge(gam4lb, m.min = 8, fixed = "offset(transect_area_km2)")
+gam4lb_dredge_drop1 <- dredge(gam4lb, m.min = 9, fixed = "offset(transect_area_km2)")
 gam4lb_dredge_drop1
-# global model is slightly better than dropping tide or waveheight
+# models w/out salinity, tide, and waveheight are as good as global model
 
-#gam4lb_full_dredge <- dredge(gam4lb, m.min = 3, fixed = "offset(transect_area_km2)")
+#gam4lb_full_dredge <- dredge(gam4lb, m.min = 4, fixed = "offset(transect_area_km2)")
 gam4lb_full_dredge
 
 #gam4lb_top3_dredge <- dredge(gam4lb, m.max = 4, fixed = "offset(transect_area_km2)")
@@ -3084,6 +3134,8 @@ days4lb <- as.data.frame(visreg4lb_data[[3]][["fit"]][["month"]])
 gam4lb_day_fits <- bind_cols(fits4lb, days4lb)
 View(gam4lb_day_fits)
 #main peak is July, secondary peaks (local maxima) in May and November, and minimum is September/October
+
+#post-hoc tests of significant parametric terms yar, beaufort, and vis:
 
 gam4lb_year_emms <- emmeans(gam4lb, "year")
 pwpm(gam4lb_year_emms, type = "response")
@@ -3450,7 +3502,7 @@ AICc(gam4, gam4lb)
 #lb data significantly lower AICc (delta = 52 where a delta of 2 is considered threshold)
 ```
 
-### Comparing total and transect count w/CSULB data
+### Total count w/CSULB data - WORKING VERSION AS OF 6/20
 ```{r}
 gam_dat_lb_tot <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
@@ -3468,6 +3520,8 @@ gam_dat_lb_tot <- daily_3yr_dat %>%
   filter(!is.na(tide)) %>%                                
   filter(!is.na(sft)) %>%   
   filter(!is.na(WVHT)) %>%
+  filter(!is.na(salinity)) %>%
+  filter(!is.na(chl)) %>% 
   filter(!is.na(total_area))
 
 lbgam_tot <- mgcv::gam(total_unique ~ year +
@@ -3477,22 +3531,113 @@ lbgam_tot <- mgcv::gam(total_unique ~ year +
                                       vis +
                                       s(tide, k = 10) +
                                       s(sft, k = 10) +
-                                      s(WVHT, k = 50) +
+                                      s(WVHT, k = 10) +
                                       offset(total_area),
                        data = gam_dat_lb_tot, 
                        method = "REML", family = nb, select = TRUE,
                        na.action = "na.fail")
 
+######################
+gam_dat_lb_tot_full <- daily_3yr_dat %>%
+  mutate(year = as.factor(as.character(year))) %>%
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
+  mutate(month = month(mdy))
+
+lbgam_tot_full <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(month, k = 8, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_full)
+anova(lbgam_tot_full)
+visreg(lbgam_tot_full)
+
+gam_dat_2021 <- daily_3yr_dat %>%
+  mutate(year = as.factor(as.character(year))) %>%
+  filter(year == 2021) %>%
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
+  mutate(month = month(mdy)) 
+
+sst_2021_gam <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(month, k = 8, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sst, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(sst_2021_gam)
+
+sft_2021_gam <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(month, k = 8, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(sft_2021_gam)
+
+sst_gam_tot_full <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(month, k = 8, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sst, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(sst_gam_tot_full)
+anova(sst_gam_tot_full)
+visreg(sst_gam_tot_full)
+#######################
+
 summary(lbgam_tot)
+#SFT and WVHT penalized to near-zero
 #DE of total density is 51.2%...
 summary(gam4lb)
 #vs 59.6% for transect count
+
+anova(lbgam_tot)
+#year and vis significant parametric terms, hour in 2020 and 2021, and month (all years)
+#transect-only model had beaufort and sft in addition to the above
+visreg(lbgam_tot)
+
+lbgam_tot_dredge_drop1 <- dredge(lbgam_tot, m.min = 9, fixed = "offset(total_area)")
+lbgam_tot_dredge_drop1
+
+lbgam_tot_dredge_all <- dredge(lbgam_tot, fixed = "offset(total_area)")
+lbgam_tot_dredge_all
 
 AICc(lbgam_tot, gam4lb)
 #different datasets and response variables so this isn't super valid
 ```
 
-### determining deviance explained of each term by dropping it from the global model CSULB VERSION - as of 6/16 
+### determining deviance explained of each term by dropping it from the global TRANSECT model - CSULB VERSION - as of 6/16 
 *note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
 summary(gam4lb)
@@ -3619,44 +3764,134 @@ summary(gam4lb_wvht)
 #wvht DE = 3.5%
 ```
 
-### Comparing gam4 models (local LTER vs regional)
+### determining deviance explained of each term by dropping it from the global TOTAL model - CSULB VERSION - as of 6/17
+*note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
-MuMIn::AICc(gam4, glob_gam, cabrillo3_gam4, scripps3_gam4, cabrillo_3, scripps_3)
-#cabrillo+carp and just Cabrillo have lowest AIC
+summary(lbgam_tot)
+# global model explains 51.2% of deviance
 
-summary(gam4) #55.2% DE with just Carp temp - Cabrillo temp is definitely doing a lot of work
-summary(cabrillo3_gam4) #64.3% DE with both Carp and Cabrillo temp
-summary(cabrillo_3) #63.1% DE with just Cabrillo temp
-```
+lbgam_tot_year <- mgcv::gam(total_unique ~ s(hour, k = 10, by = year) +
+                                          s(month, k = 8, by = year) +
+                                          beaufort +
+                                          vis +
+                                          s(tide, k = 10) +
+                                          s(Temp_top, k = 10) +
+                                          s(WVHT, k = 50) +
+                                          offset(transect_area_km2),
+                         data = gam_dat_lb_tot, method = "REML", 
+                         family = nb, select = TRUE,
+                         na.action = "na.fail")
+summary(lbgam_tot_year)
+51.2 - 41.5
+#year DE = 9.7%
 
-### Global GAM, but with total unique rather than transect count (sensitivity analysis)
-```{r}
-glob_gam_tot <- mgcv::gam(total_unique ~ year +
-                                   s(month, k = 8, by = year) +
-                                   s(hour, k = 10, by = year) +
+lbgam_tot_hour <- mgcv::gam(total_unique ~ year +
+                                   s(month, k = 8, by = year) + 
                                    beaufort +
                                    vis +
                                    s(tide, k = 10) +
                                    s(Temp_top, k = 10) +
-                                   s(cabrillo_temp_3wk, k = 12) +
-                                   s(scripps_temp_3wk, k = 12) +
                                    s(WVHT, k = 50) +
-                                   offset(total_area),
-                  data = gam_dat2, method = "REML", family = nb)
-summary(glob_gam_tot)
-#64.5% DE, n = 202
-summary(glob_gam)
-#69% DE, n = 208
+                                   offset(transect_area_km2),
+                         data = gam_dat_lb_tot, method = "REML", 
+                         family = nb, select = TRUE,
+                         na.action = "na.fail")
+summary(lbgam_tot_hour)
+51.2 - 47.4
+#hour DE = 3.8%
 
-anova.gam(glob_gam_tot)
-anova.gam(glob_gam)
-#same terms are significant when transect or total count is used
+lbgam_tot_month <- mgcv::gam(total_unique ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(transect_area_km2),
+                          data = gam_dat_lb_tot, method = "REML", 
+                          family = nb, select = TRUE,
+                          na.action = "na.fail")
+summary(lbgam_tot_month)
+51.2 - 45.5
+#month DE = 5.7%
 
-visreg(glob_gam_tot)
+lbgam_tot_beau <- mgcv::gam(total_unique ~ year +
+                                          s(hour, k = 10, by = year) +
+                                          s(month, k = 8, by = year) +
+                                          vis +
+                                          s(tide, k = 10) +
+                                          s(Temp_top, k = 10) +
+                                          s(WVHT, k = 50) +
+                                          offset(transect_area_km2),
+                         data = gam_dat_lb_tot, method = "REML",
+                         family = nb, select = TRUE,
+                         na.action = "na.fail")
+summary(lbgam_tot_beau)
+51.2 - 52.2
+#beaufort DE = -1%
+
+lbgam_tot_vis <- mgcv::gam(total_unique ~ year +
+                                         s(hour, k = 10, by = year) + 
+                                         s(month, k = 8, by = year) +
+                                         beaufort +
+                                         s(tide, k = 10) +
+                                         s(Temp_top, k = 10) +
+                                         s(WVHT, k = 50) +
+                                         offset(transect_area_km2),
+                        data = gam_dat_lb_tot, method = "REML",
+                        family = nb, select = TRUE,
+                        na.action = "na.fail")
+summary(lbgam_tot_vis)
+51.2 - 49.4
+#vis DE = 1.8%
+
+lbgam_tot_tide <- mgcv::gam(total_unique ~ year +
+                                          s(hour, k = 10, by = year) +
+                                          s(month, k = 8, by = year) +
+                                          beaufort +
+                                          vis +
+                                          s(Temp_top, k = 10) +
+                                          s(WVHT, k = 50) +
+                                          offset(transect_area_km2),
+                         data = gam_dat_lb_tot, method = "REML",
+                         family = nb, select = TRUE,
+                         na.action = "na.fail")
+summary(lbgam_tot_tide)
+51.2 - 54.2
+#tide DE = -3%
+
+lbgam_tot_temp <- mgcv::gam(total_unique ~ year +
+                                       s(hour, k = 10, by = year) + 
+                                       s(month, k = 8, by = year) +
+                                       beaufort +
+                                       vis+
+                                       s(tide, k = 10) +
+                                       s(WVHT, k = 50) +
+                                       offset(transect_area_km2),
+                         data = gam_dat_lb_tot, method = "REML",
+                         family = nb, select = TRUE,
+                         na.action = "na.fail")
+summary(lbgam_tot_temp)
+51.2 - 54.4
+#temp DE = -3.2%
+
+lbgam_tot_wvht <- mgcv::gam(total_unique ~ year +
+                                          s(hour, k = 10, by = year)+
+                                          s(month, k = 8, by = year) +
+                                          beaufort +
+                                          vis +
+                                          s(tide, k = 10) +
+                                          s(Temp_top, k = 10) +
+                                          offset(transect_area_km2),
+                         data = gam_dat_lb_tot, method = "REML",
+                         family = nb, select = TRUE,
+                         na.action = "na.fail")
+summary(lbgam_tot_wvht)
+51.2 - 54.4
+#wvht DE = 3.5%
 ```
 
 ### determining deviance explained of each term by dropping it from the global model LTER VERSION - as of 6/16
-*note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
 summary(gam4)
 # global model explains 55.6% of deviance
@@ -3766,6 +4001,107 @@ summary(gam4wvht)
 #wvht DE = 1.3%
 ```
 
+### Comparing gam4 models (local LTER vs regional)
+```{r}
+MuMIn::AICc(gam4, glob_gam, cabrillo3_gam4, scripps3_gam4, cabrillo_3, scripps_3)
+#cabrillo+carp and just Cabrillo have lowest AIC
+
+summary(gam4) #55.2% DE with just Carp temp - Cabrillo temp is definitely doing a lot of work
+summary(cabrillo3_gam4) #64.3% DE with both Carp and Cabrillo temp
+summary(cabrillo_3) #63.1% DE with just Cabrillo temp
+```
+
+### Global LTER GAM, but with total unique rather than transect count
+```{r}
+glob_gam_tot <- mgcv::gam(total_unique ~ year +
+                                   s(month, k = 8, by = year) +
+                                   s(hour, k = 10, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(Temp_top, k = 10) +
+                                   s(cabrillo_temp_3wk, k = 12) +
+                                   s(scripps_temp_3wk, k = 12) +
+                                   s(WVHT, k = 50) +
+                                   offset(total_area),
+                  data = gam_dat2, method = "REML", family = nb)
+summary(glob_gam_tot)
+#64.5% DE, n = 202
+summary(glob_gam)
+#69% DE, n = 208
+
+anova.gam(glob_gam_tot)
+anova.gam(glob_gam)
+#same terms are significant when transect or total count is used
+
+visreg(glob_gam_tot)
+```
+
+## Why is SFT significant in transect model, but not total model?
+```{r}
+sst_20_21 %>% 
+  filter(year(date_hour) == 2021) %>% 
+ggplot(aes(x = date_hour, y = sst)) +
+  geom_point() +
+  
+
+ggplot(data = size_dat_3yr, aes(x = video_YN)) +
+  geom_bar()
+View(daily_3yr_dat)
+
+ggplot(data = daily_3yr_dat, aes(x = as.factor(year), y = sft)) +
+  geom_boxplot()
+
+daily_3yr_dat %>% 
+  group_by(as.factor(year)) %>% 
+  summarize(mean_temp = mean(sft))
+
+ggplot(daily_3yr_dat, aes(x = sft)) +
+  geom_point(aes(y = transect_total), color = "blue") + 
+  geom_point(aes(y = total_unique), color = "red") +
+  geom_smooth(aes(y = transect_total), color = "blue", SE = FALSE) +
+    geom_smooth(aes(y = total_unique), color = "red", SE = FALSE)
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = sft)) +
+    geom_point(aes(y = inner_count)) +
+    geom_point(aes(y = outer_count), color = "red") +
+    geom_point(aes(y = manual_count), color = "blue")
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = sft)) +
+    geom_smooth(aes(y = inner_count), color = "red") +
+    geom_smooth(aes(y = manual_count), color = "blue")
+
+daily_3yr_dat %>% 
+  ggplot(aes(x = sft)) +
+    geom_smooth(aes(y = transect_total), color = "red") +
+    geom_smooth(aes(y = manual_unique), color = "blue") +
+    geom_smooth(aes(y = total_unique), color = "black")
+
+size_dat_with_sft <- left_join(size_dat_unique, daily_3yr_dat, by = "date")
+
+size_dat_with_sft %>% 
+  filter(video_YN == "manual" | video_YN == "manual_1" | video_YN == "manual_2") %>% 
+  summarize(mean = mean(sft, na.rm = TRUE))
+
+size_dat_with_sft %>% 
+  filter(video_YN == "inner" | video_YN == "inner ") %>% 
+  summarize(mean = mean(sft, na.rm = TRUE))
+
+size_dat_with_sft %>% 
+  filter(video_YN == "outer" | video_YN == "outer ") %>% 
+  summarize(mean = mean(sft, na.rm = TRUE))
+#mean temp of manual sightings is lower than transect sightings
+
+size_dat_with_sft %>% 
+  filter(lat > 0) %>%
+  filter(video_YN == "manual" | video_YN == "manual_1" | video_YN == "manual_2") %>% 
+ggplot(aes(x = long, y = lat, color = sft)) +
+         geom_point(size = 2, alpha = 0.8) +
+         scale_color_distiller(palette = "YlOrRd", trans = "reverse")
+
+```
 ### determining deviance explained of each term by dropping it from the global Cabrillo model - as of 5/13 
 *note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
@@ -4398,6 +4734,7 @@ juvgamlb_dredge_drop_1
 #juvgamlb_dredge_full <- dredge(juvgam_lb, m.min = 3, fixed = "offset(area_20m)")
 juvgamlb_dredge_full
 
+#post-hoc test of significant parametric terms:
 juvlb_year_emms <- emmeans(juvgam_lb, "year")
 pwpm(juvlb_year_emms, type = "response")
 #2020 and 2021 significantly higher than 2019
@@ -4513,7 +4850,6 @@ summary(juvgam_lb_wvht)
 #wvht DE = 0%
 ```
 
-
 ## Modelling density of adults
 
 ### Building the dataset
@@ -4533,9 +4869,182 @@ ad_dat <- daily_3yr_dat %>%
   filter(!is.na(WVHT)) %>% 
   filter(!is.na(Temp_top)) %>% 
   filter(!is.na(tide))
+
+ad_datlb <- daily_3yr_dat %>%
+  mutate(year = as.factor(as.character(year))) %>%
+  mutate(month = month(mdy)) %>%
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(vis = as.factor(vis)) %>%
+  mutate(beaufort = as.factor(beaufort)) %>%
+  filter(!is.na(area_20m)) %>% 
+  filter(!is.na(adult)) %>% 
+  filter(!is.na(year)) %>% 
+  filter(!is.na(date_hour)) %>% 
+  filter(!is.na(day)) %>% 
+  filter(!is.na(beaufort)) %>% 
+  filter(!is.na(vis)) %>% 
+  filter(!is.na(WVHT)) %>% 
+  filter(!is.na(sft)) %>% 
+  filter(!is.na(tide))
 ```
 
-### Modelling density of adults
+### Modelling density of adults - CSULB DATA
+```{r}
+adgam_lb <- mgcv::gam(adult ~ year +
+                                s(hour, k = 10, by = year) +
+                                s(month, k = 8, by = year) + 
+                                beaufort +
+                                vis +
+                                s(tide, k = 10) +
+                                s(sft, k = 10) +
+                                s(WVHT, k = 50) +
+                                offset(area_20m), data = ad_datlb,
+                      method = "REML", family = nb,
+                      select = TRUE, na.action = "na.fail")
+
+summary(adgam_lb)
+# 37% of deviance explained, n = 248
+
+gam.check(adgam_lb)
+#issues with month, not sure if 7 vs 0 counts as "edf much lower than k"
+
+visreg(adgam_lb)
+
+anova(adgam_lb)
+#year, hour (in 2019 and 2021), month (0.0556 in 2019 and p < 0.05 in 2021), and tide are significant
+
+#adgamlb_dredge_drop_1 <- dredge(adgam_lb, m.min = 8, fixed = "offset(area_20m)")
+adgamlb_dredge_drop_1
+#dropping beaufort and vis improve fit over global model, dropping temp is equal to global
+
+#adgamlb_dredge_full <- dredge(adgam_lb, m.min = 3, fixed = "offset(area_20m)")
+adgamlb_dredge_full
+
+#post-hoc test of significant parametric terms:
+adlb_year_emms <- emmeans(adgam_lb, "year")
+pwpm(adlb_year_emms, type = "response")
+#2020 and 2021 significantly higher than 2019
+```
+
+### Determining DE by dropping each term from the adult model - CSULB DATA
+```{r}
+summary(adgam_lb)
+#global model explains 37% of deviance
+
+adgam_lb_year <- mgcv::gam(adult ~ s(hour, k = 10, by = year) +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(sft, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(area_20m),
+                           data = ad_datlb, method = "REML",
+                           family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam_lb_year)
+37 - 29
+#year DE = 8.0%
+
+adgam_lb_hour <- mgcv::gam(adult ~ year +
+                                   s(month, k = 8, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(sft, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(area_20m),
+                           data = ad_datlb, method = "REML",
+                           family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam_lb_hour)
+37 - 32.9
+#hour DE = 4.1%
+
+adgam_lb_month <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   beaufort +
+                                   vis +
+                                   s(tide, k = 10) +
+                                   s(sft, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(area_20m),
+                            data = ad_datlb, method = "REML", family = nb,
+                            na.action = "na.fail", select = TRUE)
+summary(adgam_lb_month)
+37 - 29.6
+#month DE = 7.4
+
+adgam_lb_beau <- mgcv::gam(adult ~ year +
+                                    s(hour, k = 10, by = year) + 
+                                    s(month, k = 8, by = year) +
+                                    vis +
+                                    s(tide, k = 10) +
+                                    s(sft, k = 10) +
+                                    s(WVHT, k = 50) +
+                                    offset(area_20m),
+                           data = ad_datlb, method = "REML",
+                           family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam_lb_beau)
+37 - 36.2
+#beaufort DE = 0.8%
+
+adgam_lb_vis <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   s(month, k = 8, by = year) +
+                                   beaufort +
+                                   s(tide, k = 10) +
+                                   s(sft, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(area_20m),
+                          data = ad_datlb, method = "REML",
+                          family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam_lb_vis)
+37 - 35.7
+#vis DE = 2.7%
+
+adgam_lb_tide <- mgcv::gam(adult ~ year +
+                                   s(hour, k = 10, by = year) + 
+                                   s(month, k = 8, by = year) +
+                                   beaufort +
+                                   vis +
+                                   s(sft, k = 10) +
+                                   s(WVHT, k = 50) +
+                                   offset(area_20m),
+                           data = ad_datlb, method = "REML", family = nb,
+                           na.action = "na.fail", select = TRUE)
+summary(adgam_lb_tide)
+37 - 31.6
+#tide DE = 5.4%
+
+adgam_lb_temp <- mgcv::gam(adult ~ year +
+                                    s(hour, k = 10, by = year) + 
+                                    s(month, k = 8, by = year) +
+                                    beaufort +
+                                    vis +
+                                    s(tide, k = 10) +
+                                    s(WVHT, k = 50) +
+                                    offset(area_20m),
+                           data = ad_datlb, method = "REML",
+                           family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam_lb_temp)
+37 - 37
+#temp DE = 0%
+
+adgam_lb_wvht <- mgcv::gam(adult ~ year +
+                                    s(hour, k = 10, by = year) + 
+                                    s(month, k = 8, by = year) +
+                                    beaufort +
+                                    vis +
+                                    s(tide, k = 10) +
+                                    s(sft, k = 10) +
+                                    offset(area_20m),
+                           data = ad_datlb, method = "REML",
+                           family = nb, na.action = "na.fail", select = TRUE)
+summary(adgam_lb_wvht)
+37 - 37
+#wvht DE = 0%
+```
+
+### Modelling density of adults - LTER DATA
 ```{r}
 adgam1 <- mgcv::gam(adult ~ year +
                                  s(hour, k = 10, by = year) +
@@ -4678,7 +5187,7 @@ summary(adgam1wvht)
 #wvht DE = -0.3%
 ```
 
-## Modelling length of each shark
+## Modelling length of each shark (not sure how this will work)
 ```{r}
 length_dat <- daily_3yr_dat %>%
   filter(!is.na(total_area)) %>% 
@@ -5064,7 +5573,6 @@ daily_3yr_dat %>%
     geom_point() +
     geom_smooth(method = "lm")
 ```
-
 
 ## 2019 Time Series of Transect Data with 8 ft. cutoff
 ```{r}
