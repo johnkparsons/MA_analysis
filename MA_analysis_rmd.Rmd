@@ -648,7 +648,7 @@ write.csv(daily_3yr_dat_backup, "data/daily_3yr_dat_backup.csv")
 ```{r}
 daily_3yr_dat <- read.csv("data/daily_3yr_dat_backup.csv")
 
-View(daily_3yr_dat)
+#View(daily_3yr_dat)
 ```
 
 ## Building 3yr size dataset
@@ -725,12 +725,9 @@ daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(adult = ifelse(is.na(adult), 0, adult)) %>% 
   mutate(total_sized = juvenile + adult) %>% 
   filter(detection == "Y" | detection == "N") %>%
-  mutate(total_area = ifelse(year == 2019, transect_area_km2,
-                             transect_area_km2 + manual_area_km2)) %>% 
+  mutate(total_area = ifelse(year == 2019, transect_area_km2, ifelse(is.na(manual_area_km2), transect_area_km2, ifelse(is.na(transect_area_km2), manual_area_km2, manual_area_km2 + transect_area_km2)))) %>% 
   mutate(area_20m = ifelse(year == 2019, 
                            transect_area_km2, manual_area_km2))
-
-#View(daily_3yr_dat)
 ```
 
 ## Code for columns with manual only (2020/2021) and transect only (2019) juvenile and adult counts, plus a column for the area of the appropriate survey (don't run, this is just leftover from when I thought it was needed - see above note)
@@ -949,6 +946,31 @@ chl_dat <- chl_dat_raw %>%
 View(chl_dat)
 
 daily_3yr_dat <- left_join(daily_3yr_dat, chl_dat, by = "mdy")
+
+daily_3yr_dat %>% 
+  filter(!is.na(chl)) %>% 
+  nrow()
+
+nrow(daily_3yr_dat)
+#100 chl values missing?
+
+chl_dat_raw %>% 
+  slice(-1) %>%
+  mutate(long = as.numeric(longitude)) %>%
+  mutate(lat = as.numeric(latitude)) %>%
+  mutate(chl = as.numeric(chlorophyll)) %>% 
+  mutate(long = round(long, digits = 4)) %>% 
+  mutate(lat = round(lat, digits = 4)) %>%
+  filter(lat == 34.4 | lat == 34.4125) %>% 
+  filter(long == -119.5625 | long == -119.5500) %>%
+  filter(!(lat == 34.4125 & long == -119.5500)) %>%
+  group_by(time) %>%
+  summarize(chl = mean(chl, na.rm = TRUE)) %>% 
+  mutate(chl_interp = na.approx(chl)) %>% 
+  mutate(mdy = as_date(time), time = NULL) %>% 
+  ggplot(aes(x = mdy)) +
+    geom_point(aes(y = chl_interp), color = "red") +
+    geom_point(aes(y = chl))
 ```
 
 ## ERI SONGS data - DNR
@@ -2863,6 +2885,9 @@ mgcv::concurvity(glob_gam,full=FALSE)
 #Cabrillo x Scripps = 0.229
 #Tide x WVHT is very high (0.9), WVHT is also high with all three temp variables (>0.4)
 #Many environmental variables concurved (?) with the temporal ones but that is to be expected
+
+mgcv::concurvity(lbgam_tot_full, full = FALSE)
+#sft and hour 2019 is only combo with worst > 0.8
 ```
 
 ### Trends with detectability variables
@@ -3502,7 +3527,7 @@ AICc(gam4, gam4lb)
 #lb data significantly lower AICc (delta = 52 where a delta of 2 is considered threshold)
 ```
 
-### Total count w/CSULB data - WORKING VERSION AS OF 6/20
+### Total count w/CSULB data
 ```{r}
 gam_dat_lb_tot <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
@@ -3536,7 +3561,10 @@ lbgam_tot <- mgcv::gam(total_unique ~ year +
                        data = gam_dat_lb_tot, 
                        method = "REML", family = nb, select = TRUE,
                        na.action = "na.fail")
+```
 
+### Working version as of 6/28: day instead of month, CSULB or LTER sft data, total count
+```{r}
 ######################
 gam_dat_lb_tot_full <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
@@ -3544,23 +3572,204 @@ gam_dat_lb_tot_full <- daily_3yr_dat %>%
   mutate(beaufort = as.factor(beaufort)) %>% 
   mutate(vis = as.factor(vis)) %>% 
   mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
-  mutate(month = month(mdy))
+  mutate(month = month(mdy)) %>%
+  mutate(yday = yday(mdy)) %>% 
+  mutate(month_fac = as.factor(month))
+View(gam_dat_lb_tot_full)
 
 lbgam_tot_full <- mgcv::gam(total_unique ~ year +
                                       s(hour, k = 10, by = year) +
-                                      s(month, k = 8, by = year) +
+                                      s(yday, k = 30, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(sft, k = 50) +
+                                      s(WVHT, k = 15) +
+                                      s(salinity, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+
+
+summary(lbgam_tot_full)
+#DE = 62.2, n = 249
+#wvht penalized to zero, removal increases n to 252
+visreg(lbgam_tot_full)
+
+anova(lbgam_tot_full)
+#year and vis significant parametrics, beaufort marginal at p = 0.068
+#hour sig in 2020 and 2021, not 2019
+#day sig. in all years
+#tide and sft significant
+#wvht n.s.
+#salinity marginal at p = 0.064
+
+gam.check(lbgam_tot_full)
+#problem w/ wvht - could consider dropping
+
+mgcv::concurvity(lbgam_tot_full, full = TRUE)
+#basically everything is highly concurved w/ the "rest of the model" (indicating some variables may need to be removed)
+
+mgcv::concurvity(lbgam_tot_full, full = FALSE)
+#basically all of the envt'l variables are highly concurved w/ the temporal variables (day and hour)
+#what does it mean that day and hour are concurved within each year? 
+```
+
+### Dropping terms to test sensitivity to concurvity
+```{r}
+lbgam_tot_no_wvht <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 30, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(sft, k = 50) +
+                                      s(salinity, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_no_wvht)
+#same terms sig.
+visreg(lbgam_tot_no_wvht)
+
+mgcv::concurvity(lbgam_tot_no_wvht, full = TRUE)
+
+lbgam_tot_no_wvht_or_sal <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 30, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(sft, k = 50) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_no_wvht_or_sal)
+#same terms sig.
+mgcv::concurvity(lbgam_tot_no_wvht_or_sal, full = TRUE)
+
+lbgam_tot_no_sft <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 30, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(WVHT, k = 15) +
+                                      s(salinity, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_no_sft)
+visreg(lbgam_tot_no_sft)
+#no change
+
+lbgam_tot_no_sft_or_hour <- mgcv::gam(total_unique ~ year +
+                                      s(yday, k = 30, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(WVHT, k = 15) +
+                                      s(salinity, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_no_sft_or_hour)
+#tide became marginal
+visreg(lbgam_tot_no_sft_or_hour)
+#no change
+
+lbgam_tot_no_day <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(sft, k = 50) +
+                                      s(WVHT, k = 15) +
+                                      s(salinity, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_no_day)
+#sft becomes totally insignificant and is penalized to zero when day is removed!
+visreg(lbgam_tot_no_day)
+
+# Concurvity test conclusion: mgcv deals with concurvity well. the only variable that, when removed, changed the significance of another variable was day of year.
+```
+
+### LTER data instead of CSULB data
+```{r}
+ltergam_tot_full <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(day, k = 30, by = year) +
                                       beaufort +
                                       vis +
                                       s(tide, k = 10) +
-                                      s(sft, k = 10) +
+                                      s(Temp_top, k = 10) +
                                       s(WVHT, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(ltergam_tot_full)
+#DE = 99.6, n = 251 - should definitely use CSULB data!
+anova(ltergam_tot_full)
+#year, beaufort, vis significant parametrics
+#day sig. in 2020 and marginal in 2021
+#tide and sft sig.
+gam.check(ltergam_tot_full)
+#marginal issues with hour (month had worse issues)
+```
+
+###comparing models without hour and without sft (only concurved variables)
+```{r}
+lbgam_tot_full_no_sft <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 12, by = year) +
+                                      month_fac +
+                                      beaufort +
+                                      vis +
+                                      s(WVHT, k = 10) +
+                                      s(tide, k = 10) +
                                       s(chl) +
                                       offset(total_area),
                        data = gam_dat_lb_tot_full, 
                        method = "REML", family = nb, select = TRUE)
-summary(lbgam_tot_full)
+summary(lbgam_tot_full_no_sft)
 anova(lbgam_tot_full)
 visreg(lbgam_tot_full)
+
+lbgam_tot_full_no_hr <- mgcv::gam(total_unique ~ year +
+                                      beaufort +
+                                      vis +
+                                      s(sft, k = 50) +
+                                      s(WVHT, k = 10) +
+                                      s(tide, k = 10) +
+                                      s(chl) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(lbgam_tot_full_no_sft)
+#wvht ns, vis 0.06, DE = 99.7
+anova(lbgam_tot_full_no_sft)
+
+summary(lbgam_tot_full_no_hr)
+#sft, wvht, tide ns, vis 0.08, beau = 0.09, month_fac = 0.055, DE = 99.5
+anova(lbgam_tot_full_no_hr)
+
+
+
+
+
+
+
+
+
+
+
+
+visreg(lbgam_tot_full)
+
+gam.check(lbgam_tot_full)
 
 gam_dat_2021 <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
@@ -3614,6 +3823,7 @@ sst_gam_tot_full <- mgcv::gam(total_unique ~ year +
 summary(sst_gam_tot_full)
 anova(sst_gam_tot_full)
 visreg(sst_gam_tot_full)
+
 #######################
 
 summary(lbgam_tot)
