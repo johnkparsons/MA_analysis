@@ -7,10 +7,10 @@ editor_options:
   chunk_output_type: console
 ---
 
-#Setup
+# Setup
 ```{r, eval=FALSE}
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", "plyr", "broom.mixed", "ggthemes", "padr", "ptest", "maps", "mapdata", "hexbin", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr"))
-#install.packages("cowplot")
+install.packages("ggthemes")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -158,27 +158,6 @@ dat_2019 <- flights_plus_channel_dat_2019 %>%
 view(dat_2019)
 ```
 
-### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2019 (as of 4/9 planning on replacing this with CSULB or LTER data)
-```{r}
-harbor_dat_2019 <- read.csv("data_raw/2019_harbor_dat.csv")
-#View(harbor_dat_2019)
-
-harbor_dat_2019 <- harbor_dat_2019 %>% 
-              rename(time = 2, harbor_windspd = 3,
-                     harbor_winddir = 4, harbor_windgust = 5,
-                     harbor_airtemp = 6, harbor_baro = 7) %>% 
-              mutate(time = lubridate::hm(time)) %>% 
-              mutate(YY = year(Date)) %>% 
-              mutate(MM = month(Date)) %>% 
-              mutate(DD = day(Date)) %>% 
-              mutate(hh = hour(time)) %>% 
-              mutate(mm = minute(time)) %>% 
-              mutate(date_hour = make_datetime(YY, MM, DD, hh, mm)) %>% 
-              select(-c(2, 8:14))
-              
-dat_2019 <- left_join(dat_2019, harbor_dat_2019, by = "date_hour")
-```
-
 ### Size Data Tidying (1 row = 1 individual) - 2019
 ```{r}
 size_dat_2019 <- read.csv("data_raw/size_dat_2019.csv")
@@ -298,26 +277,6 @@ flights_plus_channel_dat_2020 <- left_join(tide_added_2020, channel_dat_2020, by
 dat_2020 <- flights_plus_channel_dat_2020 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2) 
 #view(dat_2020)
-```
-
-### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2020 (as of 4/9 planning on replacing this with CSULB or LTER data)
-```{r}
-harbor_dat_2020 <- read.csv("data_raw/2020_harbor_dat.csv")
-#View(harbor_dat_2020)
-
-harbor_dat_2020 <- harbor_dat_2020 %>% 
-              rename(time = 2, harbor_windspd = 3, harbor_winddir = 4, harbor_windgust = 5, harbor_airtemp = 6, harbor_baro = 7) %>% 
-              mutate(time = lubridate::hm(time)) %>% 
-              mutate(YY = year(Date)) %>% 
-              mutate(MM = month(Date)) %>% 
-              mutate(DD = day(Date)) %>% 
-              mutate(hh = hour(time)) %>% 
-              mutate(mm = minute(time)) %>% 
-              mutate(date_hour = make_datetime(YY, MM, DD, hh, mm)) %>% 
-              select(-c(2, 8:14))
-              
-dat_2020 <- left_join(dat_2020, harbor_dat_2020, by = "date_hour")
-#View(dat_2020)
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2020
@@ -533,28 +492,6 @@ flights_plus_channel_dat_2021 <- left_join(dat_2021, channel_dat_2021, by = "dat
 
 dat_2021 <- flights_plus_channel_dat_2021 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2) 
-view(dat_2021)
-```
-
-### DO NOT RUN: Reading in SB harbor data (Station 9411340) - 2021 (as of 4/9 planning on replacing this with CSULB or LTER data)
-```{r}
-harbor_dat_2021 <- read.csv("data_raw/2021_harbor_dat.txt")
-#View(harbor_dat_2021)
-
-harbor_dat_2021 <- harbor_dat_2021 %>% 
-              rename(time = 2, harbor_windspd = 3,
-                     harbor_winddir = 4, harbor_windgust = 5,
-                     harbor_airtemp = 6, harbor_baro = 7) %>% 
-              mutate(time = lubridate::hm(time)) %>% 
-              mutate(YY = year(Date)) %>% 
-              mutate(MM = month(Date)) %>% 
-              mutate(DD = day(Date)) %>% 
-              mutate(hh = hour(time)) %>% 
-              mutate(mm = minute(time)) %>% 
-              mutate(date_hour = make_datetime(YY, MM, DD, hh, mm)) %>% 
-              select(-c(2, 8:14))
-              
-dat_2021 <- left_join(dat_2021, harbor_dat_2021, by = "date_hour")
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2021
@@ -660,14 +597,13 @@ size_dat_3yr <- full_join(size_dat_2yr, size_dat_2021)
 
 size_dat_3yr <- size_dat_3yr %>% 
                   select(!c(26:31))
-#write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
+
+write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
 ```
 
 ### New 3yr df with size of each unique shark
 (1 row = 1 shark, daily data is repeated for days where multiple sharks were observed)
 ```{r}
-#size_dat_3yr <- read.csv("data/size_dat_3yr.csv")
-
 size_dat_unique <- size_dat_3yr %>%
                     filter(unique == "Y")
 
@@ -682,22 +618,6 @@ joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
 
 ## Adding size classes and inner/outer/manual to daily 3yr dataframe
 ```{r}
-#this is only needed if there are adjusted lengths from 2020/2021 transect flights:
-#size_classed_3yr_20m_test <- joined_3yr %>%
-  #filter(!is.na(length_adj_m)) %>%
-  #filter(length_adj_m > 0) %>% 
-  #group_by(date) %>%
-  #dplyr::summarize(juvenile = sum(length_adj_m < 3), 
-                   #adult = sum(length_adj_m >= 3),
-                   #juvenile_20m = sum(length_adj_m < 3 &
-                                        #ifelse(year == "2019",
-                                               #length_adj_m > 0,
-                                               #(video_YN == "manual" | 
-                                                  #video_YN == "manual_1"))),
-                   #adult_20m = sum(length_adj_m >= 3 & ifelse(year == "2019", #length_adj_m > 0, (video_YN == "manual" | video_YN == "manual_1"))))
-
-#view(size_classed_3yr_20m_test)
-
 ggplot(joined_3yr, aes(x = video_YN)) +
   geom_bar()
 
@@ -725,87 +645,12 @@ daily_3yr_dat <- daily_3yr_dat  %>%
   mutate(adult = ifelse(is.na(adult), 0, adult)) %>% 
   mutate(total_sized = juvenile + adult) %>% 
   filter(detection == "Y" | detection == "N") %>%
-  mutate(total_area = ifelse(year == 2019, transect_area_km2, ifelse(is.na(manual_area_km2), transect_area_km2, ifelse(is.na(transect_area_km2), manual_area_km2, manual_area_km2 + transect_area_km2)))) %>% 
-  mutate(area_20m = ifelse(year == 2019, 
-                           transect_area_km2, manual_area_km2))
-```
-
-## Code for columns with manual only (2020/2021) and transect only (2019) juvenile and adult counts, plus a column for the area of the appropriate survey (don't run, this is just leftover from when I thought it was needed - see above note)
-```{r}
-length_dat_unique <- size_dat_unique %>% 
-  mutate(year = as.character(year(mdy(date)))) %>% 
-  {if (.$year == "2019") filter(., length_adj_m > 0) else filter(., video_YN == "manual" | video_YN == "manual_1")}
-  
-length_dat_unique$date <- as.character(length_dat_unique$date)
-joined_3yr_length <- left_join(daily_3yr_dat, length_dat_unique, by = "date")
-view(joined_3yr_length)
-
-length_classed_3yr <- joined_3yr_length %>%
-  filter(!is.na(length_adj_m)) %>%
-  filter(length_adj_m > 0) %>% 
-  group_by(date) %>%
-  dplyr::summarize(juvenile_count = sum(length_adj_m < 3), 
-                   adult_count = sum(length_adj_m >= 3)) 
-
-#view(size_classed_3yr)
-
-
-daily_3yr_dat_length <- left_join(daily_3yr_dat, length_classed_3yr, by = "date")
-
-daily_3yr_dat_length <- daily_3yr_dat_length  %>%
-  mutate(juvenile = ifelse(is.na(juvenile_count), 0, juvenile_count)) %>% 
-  mutate(adult = ifelse(is.na(adult_count), 0, adult_count)) %>% 
-  mutate(total_sized_count = juvenile_count + adult_count) %>% 
-  filter(detection == "Y" | detection == "N")
-view(daily_3yr_dat_length)
-
-daily_3yr_dat <- daily_3yr_dat  %>%
-  mutate(total_area = ifelse(year == 2019, transect_area_km2, transect_area_km2 + manual_area_km2))
-
-```
-
-## Adding Scripps Pier data
-```{r}
-scripps_dat_raw <- read.csv("data_raw/scripps_temp_dat.csv")
-#view(scripps_dat_raw)
-
-scripps_dat <- scripps_dat_raw %>% 
-               slice(-1) %>%
-               filter(!is.na(temperature)) %>%
-               mutate(temp = as.numeric(temperature)) %>% 
-               mutate(mdy = as_date(time)) %>%
-               group_by(mdy) %>% 
-               summarize(scripps_temp = mean(temp, na.rm = TRUE)) %>% 
-               mutate(scripps_temp_1wk = lag(scripps_temp, n = 7)) %>% 
-               mutate(scripps_temp_2wk = lag(scripps_temp, n = 14)) %>%
-               mutate(scripps_temp_3wk = lag(scripps_temp, n = 21)) %>%
-               mutate(scripps_temp_4wk = lag(scripps_temp, n = 28))
-
-daily_3yr_dat <- daily_3yr_dat %>% 
-  mutate(mdy = mdy(date))
-
-daily_3yr_dat <- left_join(daily_3yr_dat, scripps_dat, by = "mdy")
-```
-
-## Adding Cabrillo Point data
-```{r}
-cabrillo_dat_raw <- read.csv("data_raw/cabrillo_temp_dat.csv")
-#view(cabrillo_dat_raw)
-
-cabrillo_dat <- cabrillo_dat_raw %>% 
-               slice(-1) %>%
-               filter(!is.na(sea_water_temperature)) %>%
-               mutate(temp = as.numeric(sea_water_temperature)) %>% 
-               mutate(mdy = as_date(time)) %>% 
-               group_by(mdy) %>% 
-               summarize(cabrillo_temp = mean(temp, na.rm = TRUE)) %>% 
-               mutate(cabrillo_temp_1wk = lag(cabrillo_temp, n = 7)) %>% 
-               mutate(cabrillo_temp_2wk = lag(cabrillo_temp, n = 14)) %>%
-               mutate(cabrillo_temp_3wk = lag(cabrillo_temp, n = 21)) %>%
-               mutate(cabrillo_temp_4wk = lag(cabrillo_temp, n = 28))
-#view(cabrillo_dat)
-
-daily_3yr_dat <- left_join(daily_3yr_dat, cabrillo_dat, by = "mdy")
+  mutate(total_area = ifelse(year == 2019, transect_area_km2,
+                             ifelse(is.na(manual_area_km2), transect_area_km2, 
+                                    ifelse(is.na(transect_area_km2),
+                                           manual_area_km2,
+                                           manual_area_km2 + transect_area_km2)))) %>% 
+  mutate(area_20m = ifelse(year == 2019, transect_area_km2, manual_area_km2))
 ```
 
 ## CSULB data
@@ -898,7 +743,7 @@ sft_sst_20_21 <- left_join(sft_20_21, sst_20_21, by = "date_hour")
 
 #combine 2019 and 2020/2021 sft
 sft_19_20_21 <- bind_rows(sft_19, sft_20_21)
-View(sft_19_20_21)
+#View(sft_19_20_21)
 
 ggplot(sft_sst_20_21, aes(x = date_hour, y = sft)) +
   geom_point()
@@ -939,11 +784,15 @@ chl_dat <- chl_dat_raw %>%
   mutate(lat = round(lat, digits = 4)) %>%
   filter(lat == 34.4 | lat == 34.4125) %>% 
   filter(long == -119.5625 | long == -119.5500) %>%
-  filter(!(lat == 34.4125 & long == -119.5500)) %>% 
+  filter(!(lat == 34.4125 & long == -119.5500)) %>%
   group_by(time) %>%
   summarize(chl = mean(chl, na.rm = TRUE)) %>% 
+  mutate(chl_interp = na.approx(chl)) %>% 
   mutate(mdy = as_date(time), time = NULL)
-View(chl_dat)
+#View(chl_dat)
+
+daily_3yr_dat <- daily_3yr_dat %>% 
+  mutate(mdy = as_date(datetime))
 
 daily_3yr_dat <- left_join(daily_3yr_dat, chl_dat, by = "mdy")
 
@@ -952,7 +801,7 @@ daily_3yr_dat %>%
   nrow()
 
 nrow(daily_3yr_dat)
-#100 chl values missing?
+#>100 chl values missing so I added linearly interpolated ones (see below for exploration of that)
 
 chl_dat_raw %>% 
   slice(-1) %>%
@@ -971,357 +820,70 @@ chl_dat_raw %>%
   ggplot(aes(x = mdy)) +
     geom_point(aes(y = chl_interp), color = "red") +
     geom_point(aes(y = chl))
+
+chl_dat_raw %>% 
+  slice(-1) %>%
+  mutate(long = as.numeric(longitude)) %>%
+  mutate(lat = as.numeric(latitude)) %>%
+  mutate(chl = as.numeric(chlorophyll)) %>% 
+  mutate(long = round(long, digits = 4)) %>% 
+  mutate(lat = round(lat, digits = 4)) %>%
+  filter(lat == 34.4 | lat == 34.4125) %>% 
+  filter(long == -119.5625 | long == -119.5500) %>%
+  filter(!(lat == 34.4125 & long == -119.5500)) %>%
+  group_by(time) %>%
+  summarize(chl = mean(chl, na.rm = TRUE)) %>% 
+  mutate(chl_interp = na.approx(chl)) %>% 
+  mutate(mdy = as_date(time), time = NULL) %>% 
+  ggplot(aes(x = chl_interp)) +
+    geom_histogram()
+
+chl_dat_raw %>% 
+  slice(-1) %>%
+  mutate(long = as.numeric(longitude)) %>%
+  mutate(lat = as.numeric(latitude)) %>%
+  mutate(chl = as.numeric(chlorophyll)) %>% 
+  mutate(long = round(long, digits = 4)) %>% 
+  mutate(lat = round(lat, digits = 4)) %>%
+  filter(lat == 34.4 | lat == 34.4125) %>% 
+  filter(long == -119.5625 | long == -119.5500) %>%
+  filter(!(lat == 34.4125 & long == -119.5500)) %>%
+  group_by(time) %>%
+  summarize(chl = mean(chl, na.rm = TRUE)) %>% 
+  mutate(chl_interp = na.approx(chl)) %>% 
+  mutate(mdy = as_date(time), time = NULL) %>% 
+  ggplot(aes(x = chl)) +
+    geom_histogram()
+
+ks.test(daily_3yr_dat$chl, daily_3yr_dat$chl_interp)
+#no difference in distribution of actual vs interpolated chl
+
+daily_3yr_dat %>% 
+  ggplot() +
+    geom_density(aes(chl)) +
+    geom_density(aes(chl_interp), color = "red")
+
+daily_3yr_dat %>% 
+  ggplot() +
+    stat_ecdf(aes(chl)) +
+    stat_ecdf(aes(chl_interp), color = "red")
 ```
 
-## ERI SONGS data - DNR
+## Clean up time
 ```{r}
-### pre-written code from ERI website ###
+#View(daily_3yr_dat)
 
-# Package ID: edi.648.3 Cataloging System:https://pasta.edirepository.org.
-# Data set title: UCSB SONGS Mitigation Monitoring: Wetland Performance Standard - Fish Abundance and Species Richness.
-# Data set creator:  Stephen Schroeter -  
-# Data set creator:  Henry Page -  
-# Data set creator:  Daniel Reed -  
-# Data set creator:  David Huang -  
-# Data set creator:    - SONGS Mitigation Monitoring 
-# Contact:    - Information Manager, SONGS Mitigation Monitoring Project   - songsmmp@lifesci.ucsb.edu
-# Stylesheet v2.11 for metadata conversion into program: John H. Porter, Univ. Virginia, jporter@virginia.edu 
+daily_3yr_dat <- daily_3yr_dat %>% 
+  select(-c(1, 20:22, 24:28, 30, 36))
 
-inUrl1  <- "https://pasta.lternet.edu/package/data/eml/edi/648/3/1d2580fa7e39c5f0e73f81fb1f58dd12" 
-infile1 <- tempfile()
-try(download.file(inUrl1,infile1,method="curl"))
-if (is.na(file.size(infile1))) download.file(inUrl1,infile1,method="auto")
+#str(daily_3yr_dat)
 
-                   
- dt1 <-read.csv(infile1,header=F 
-          ,skip=1
-            ,sep=","  
-        , col.names=c(
-                    "year",     
-                    "wetland_code",     
-                    "module_code",     
-                    "tc_mc_code",     
-                    "habitat_code",     
-                    "count_per_m2",     
-                    "species_count"    ), check.names=TRUE)
-               
-unlink(infile1)
-		    
-# Fix any interval or ratio columns mistakenly read in as nominal and nominal columns read as numeric or dates read as strings
-                
-if (class(dt1$wetland_code)!="factor") dt1$wetland_code<- as.factor(dt1$wetland_code)
-if (class(dt1$module_code)!="factor") dt1$module_code<- as.factor(dt1$module_code)
-if (class(dt1$tc_mc_code)!="factor") dt1$tc_mc_code<- as.factor(dt1$tc_mc_code)
-if (class(dt1$habitat_code)!="factor") dt1$habitat_code<- as.factor(dt1$habitat_code)
-if (class(dt1$count_per_m2)=="factor") dt1$count_per_m2 <-as.numeric(levels(dt1$count_per_m2))[as.integer(dt1$count_per_m2) ]               
-if (class(dt1$count_per_m2)=="character") dt1$count_per_m2 <-as.numeric(dt1$count_per_m2)
-if (class(dt1$species_count)=="factor") dt1$species_count <-as.numeric(levels(dt1$species_count))[as.integer(dt1$species_count) ]               
-if (class(dt1$species_count)=="character") dt1$species_count <-as.numeric(dt1$species_count)
-                
-# Convert Missing Values to NA for non-dates
-                
-dt1$wetland_code <- as.factor(ifelse((trimws(as.character(dt1$wetland_code))==trimws("-99999")),NA,as.character(dt1$wetland_code)))
-dt1$module_code <- as.factor(ifelse((trimws(as.character(dt1$module_code))==trimws("-99999")),NA,as.character(dt1$module_code)))
-dt1$tc_mc_code <- as.factor(ifelse((trimws(as.character(dt1$tc_mc_code))==trimws("-99999")),NA,as.character(dt1$tc_mc_code)))
-dt1$habitat_code <- as.factor(ifelse((trimws(as.character(dt1$habitat_code))==trimws("-99999")),NA,as.character(dt1$habitat_code)))
-dt1$count_per_m2 <- ifelse((trimws(as.character(dt1$count_per_m2))==trimws("-99999")),NA,dt1$count_per_m2)               
-suppressWarnings(dt1$count_per_m2 <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$count_per_m2))==as.character(as.numeric("-99999"))),NA,dt1$count_per_m2))
-dt1$species_count <- ifelse((trimws(as.character(dt1$species_count))==trimws("-99999")),NA,dt1$species_count)               
-suppressWarnings(dt1$species_count <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$species_count))==as.character(as.numeric("-99999"))),NA,dt1$species_count))
+write.csv(daily_3yr_dat, "data/daily_3yr_dat_clean.csv")
+```
 
-
-# Here is the structure of the input data frame:
-str(dt1)                            
-attach(dt1)                            
-# The analyses below are basic descriptions of the variables. After testing, they should be replaced.                 
-
-summary(year)
-summary(wetland_code)
-summary(module_code)
-summary(tc_mc_code)
-summary(habitat_code)
-summary(count_per_m2)
-summary(species_count) 
-                # Get more details on character variables
-                 
-summary(as.factor(dt1$wetland_code)) 
-summary(as.factor(dt1$module_code)) 
-summary(as.factor(dt1$tc_mc_code)) 
-summary(as.factor(dt1$habitat_code))
-detach(dt1)               
-
-# Package ID: edi.647.3 Cataloging System:https://pasta.edirepository.org.
-# Data set title: UCSB SONGS Mitigation Monitoring: Wetland Survey - Fish Abundance.
-# Data set creator:  Stephen Schroeter -  
-# Data set creator:  Henry Page -  
-# Data set creator:  Daniel Reed -  
-# Data set creator:  David Huang -  
-# Data set creator:    - SONGS Mitigation Monitoring 
-# Contact:    - Information Manager, SONGS Mitigation Monitoring Project   - songsmmp@lifesci.ucsb.edu
-# Stylesheet v2.11 for metadata conversion into program: John H. Porter, Univ. Virginia, jporter@virginia.edu 
-
-inUrl1  <- "https://pasta.lternet.edu/package/data/eml/edi/647/3/8c3e35d92cb89c98514df81d6260e270" 
-infile1 <- tempfile()
-try(download.file(inUrl1,infile1,method="curl"))
-if (is.na(file.size(infile1))) download.file(inUrl1,infile1,method="auto")
-
-                   
- dt1 <-read.csv(infile1,header=F 
-          ,skip=1
-            ,sep=","  
-        , col.names=c(
-                    "year",     
-                    "date",     
-                    "survey",     
-                    "wetland_code",     
-                    "area_code",     
-                    "module_code",     
-                    "tc_mc_code",     
-                    "habitat_code",     
-                    "enclosure_number",     
-                    "sampling_station_label",     
-                    "depth",     
-                    "haul_no",     
-                    "species_id",     
-                    "species_code",     
-                    "genus_name",     
-                    "species_name",     
-                    "count",     
-                    "enclosure_area"    ), check.names=TRUE)
-               
-unlink(infile1)
-		    
-# Fix any interval or ratio columns mistakenly read in as nominal and nominal columns read as numeric or dates read as strings
-                
-if (class(dt1$date)!="factor") dt1$date<- as.factor(dt1$date)
-if (class(dt1$survey)!="factor") dt1$survey<- as.factor(dt1$survey)
-if (class(dt1$wetland_code)!="factor") dt1$wetland_code<- as.factor(dt1$wetland_code)
-if (class(dt1$area_code)!="factor") dt1$area_code<- as.factor(dt1$area_code)
-if (class(dt1$module_code)!="factor") dt1$module_code<- as.factor(dt1$module_code)
-if (class(dt1$tc_mc_code)!="factor") dt1$tc_mc_code<- as.factor(dt1$tc_mc_code)
-if (class(dt1$habitat_code)!="factor") dt1$habitat_code<- as.factor(dt1$habitat_code)
-if (class(dt1$enclosure_number)!="factor") dt1$enclosure_number<- as.factor(dt1$enclosure_number)
-if (class(dt1$sampling_station_label)!="factor") dt1$sampling_station_label<- as.factor(dt1$sampling_station_label)
-if (class(dt1$depth)=="factor") dt1$depth <-as.numeric(levels(dt1$depth))[as.integer(dt1$depth) ]               
-if (class(dt1$depth)=="character") dt1$depth <-as.numeric(dt1$depth)
-if (class(dt1$haul_no)!="factor") dt1$haul_no<- as.factor(dt1$haul_no)
-if (class(dt1$species_id)!="factor") dt1$species_id<- as.factor(dt1$species_id)
-if (class(dt1$species_code)!="factor") dt1$species_code<- as.factor(dt1$species_code)
-if (class(dt1$genus_name)!="factor") dt1$genus_name<- as.factor(dt1$genus_name)
-if (class(dt1$species_name)!="factor") dt1$species_name<- as.factor(dt1$species_name)
-if (class(dt1$count)=="factor") dt1$count <-as.numeric(levels(dt1$count))[as.integer(dt1$count) ]               
-if (class(dt1$count)=="character") dt1$count <-as.numeric(dt1$count)
-if (class(dt1$enclosure_area)=="factor") dt1$enclosure_area <-as.numeric(levels(dt1$enclosure_area))[as.integer(dt1$enclosure_area) ]               
-if (class(dt1$enclosure_area)=="character") dt1$enclosure_area <-as.numeric(dt1$enclosure_area)
-                
-# Convert Missing Values to NA for non-dates
-                
-dt1$date <- as.factor(ifelse((trimws(as.character(dt1$date))==trimws("-99999")),NA,as.character(dt1$date)))
-dt1$survey <- as.factor(ifelse((trimws(as.character(dt1$survey))==trimws("-99999")),NA,as.character(dt1$survey)))
-dt1$wetland_code <- as.factor(ifelse((trimws(as.character(dt1$wetland_code))==trimws("-99999")),NA,as.character(dt1$wetland_code)))
-dt1$area_code <- as.factor(ifelse((trimws(as.character(dt1$area_code))==trimws("-99999")),NA,as.character(dt1$area_code)))
-dt1$module_code <- as.factor(ifelse((trimws(as.character(dt1$module_code))==trimws("-99999")),NA,as.character(dt1$module_code)))
-dt1$tc_mc_code <- as.factor(ifelse((trimws(as.character(dt1$tc_mc_code))==trimws("-99999")),NA,as.character(dt1$tc_mc_code)))
-dt1$habitat_code <- as.factor(ifelse((trimws(as.character(dt1$habitat_code))==trimws("-99999")),NA,as.character(dt1$habitat_code)))
-dt1$enclosure_number <- as.factor(ifelse((trimws(as.character(dt1$enclosure_number))==trimws("-99999")),NA,as.character(dt1$enclosure_number)))
-dt1$sampling_station_label <- as.factor(ifelse((trimws(as.character(dt1$sampling_station_label))==trimws("-99999")),NA,as.character(dt1$sampling_station_label)))
-dt1$depth <- ifelse((trimws(as.character(dt1$depth))==trimws("-99999")),NA,dt1$depth)               
-suppressWarnings(dt1$depth <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$depth))==as.character(as.numeric("-99999"))),NA,dt1$depth))
-dt1$haul_no <- as.factor(ifelse((trimws(as.character(dt1$haul_no))==trimws("-99999")),NA,as.character(dt1$haul_no)))
-dt1$species_id <- as.factor(ifelse((trimws(as.character(dt1$species_id))==trimws("-99999")),NA,as.character(dt1$species_id)))
-dt1$species_code <- as.factor(ifelse((trimws(as.character(dt1$species_code))==trimws("-99999")),NA,as.character(dt1$species_code)))
-dt1$genus_name <- as.factor(ifelse((trimws(as.character(dt1$genus_name))==trimws("-99999")),NA,as.character(dt1$genus_name)))
-dt1$species_name <- as.factor(ifelse((trimws(as.character(dt1$species_name))==trimws("-99999")),NA,as.character(dt1$species_name)))
-dt1$count <- ifelse((trimws(as.character(dt1$count))==trimws("-99999")),NA,dt1$count)               
-suppressWarnings(dt1$count <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$count))==as.character(as.numeric("-99999"))),NA,dt1$count))
-dt1$enclosure_area <- ifelse((trimws(as.character(dt1$enclosure_area))==trimws("-99999")),NA,dt1$enclosure_area)               
-suppressWarnings(dt1$enclosure_area <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt1$enclosure_area))==as.character(as.numeric("-99999"))),NA,dt1$enclosure_area))
-
-
-# Here is the structure of the input data frame:
-str(dt1)                            
-attach(dt1)                            
-# The analyses below are basic descriptions of the variables. After testing, they should be replaced.                 
-
-summary(year)
-summary(date)
-summary(survey)
-summary(wetland_code)
-summary(area_code)
-summary(module_code)
-summary(tc_mc_code)
-summary(habitat_code)
-summary(enclosure_number)
-summary(sampling_station_label)
-summary(depth)
-summary(haul_no)
-summary(species_id)
-summary(species_code)
-summary(genus_name)
-summary(species_name)
-summary(count)
-summary(enclosure_area) 
-                # Get more details on character variables
-                 
-summary(as.factor(dt1$date)) 
-summary(as.factor(dt1$survey)) 
-summary(as.factor(dt1$wetland_code)) 
-summary(as.factor(dt1$area_code)) 
-summary(as.factor(dt1$module_code)) 
-summary(as.factor(dt1$tc_mc_code)) 
-summary(as.factor(dt1$habitat_code)) 
-summary(as.factor(dt1$enclosure_number)) 
-summary(as.factor(dt1$sampling_station_label)) 
-summary(as.factor(dt1$haul_no)) 
-summary(as.factor(dt1$species_id)) 
-summary(as.factor(dt1$species_code)) 
-summary(as.factor(dt1$genus_name)) 
-summary(as.factor(dt1$species_name))
-detach(dt1)               
-         
-# seine data:
-inUrl2  <- "https://pasta.lternet.edu/package/data/eml/edi/647/3/44dc7a48b659dcc41e145ee5135d0947" 
-infile2 <- tempfile()
-try(download.file(inUrl2,infile2,method="curl"))
-if (is.na(file.size(infile2))) download.file(inUrl2,infile2,method="auto")
-
-                   
- dt2 <-read.csv(infile2,header=F 
-          ,skip=1
-            ,sep=","  
-        , col.names=c(
-                    "year",     
-                    "survey",     
-                    "date",     
-                    "wetland_code",     
-                    "module_code",     
-                    "tc_mc_code",     
-                    "habitat_code",     
-                    "seine_section_code",     
-                    "seine_label",     
-                    "seine_sample_width",     
-                    "seine_sample_length",     
-                    "seine_sample_area",     
-                    "depth",     
-                    "haul_no",     
-                    "species_id",     
-                    "species_code",     
-                    "genus_name",     
-                    "species_name",     
-                    "count"    ), check.names=TRUE)
-               
-unlink(infile2)
-		    
-# Fix any interval or ratio columns mistakenly read in as nominal and nominal columns read as numeric or dates read as strings
-                
-if (class(dt2$survey)!="factor") dt2$survey<- as.factor(dt2$survey)
-if (class(dt2$date)!="factor") dt2$date<- as.factor(dt2$date)
-if (class(dt2$wetland_code)!="factor") dt2$wetland_code<- as.factor(dt2$wetland_code)
-if (class(dt2$module_code)!="factor") dt2$module_code<- as.factor(dt2$module_code)
-if (class(dt2$tc_mc_code)!="factor") dt2$tc_mc_code<- as.factor(dt2$tc_mc_code)
-if (class(dt2$habitat_code)!="factor") dt2$habitat_code<- as.factor(dt2$habitat_code)
-if (class(dt2$seine_section_code)!="factor") dt2$seine_section_code<- as.factor(dt2$seine_section_code)
-if (class(dt2$seine_label)!="factor") dt2$seine_label<- as.factor(dt2$seine_label)
-if (class(dt2$seine_sample_width)=="factor") dt2$seine_sample_width <-as.numeric(levels(dt2$seine_sample_width))[as.integer(dt2$seine_sample_width) ]               
-if (class(dt2$seine_sample_width)=="character") dt2$seine_sample_width <-as.numeric(dt2$seine_sample_width)
-if (class(dt2$seine_sample_length)=="factor") dt2$seine_sample_length <-as.numeric(levels(dt2$seine_sample_length))[as.integer(dt2$seine_sample_length) ]               
-if (class(dt2$seine_sample_length)=="character") dt2$seine_sample_length <-as.numeric(dt2$seine_sample_length)
-if (class(dt2$seine_sample_area)=="factor") dt2$seine_sample_area <-as.numeric(levels(dt2$seine_sample_area))[as.integer(dt2$seine_sample_area) ]               
-if (class(dt2$seine_sample_area)=="character") dt2$seine_sample_area <-as.numeric(dt2$seine_sample_area)
-if (class(dt2$depth)=="factor") dt2$depth <-as.numeric(levels(dt2$depth))[as.integer(dt2$depth) ]               
-if (class(dt2$depth)=="character") dt2$depth <-as.numeric(dt2$depth)
-if (class(dt2$haul_no)!="factor") dt2$haul_no<- as.factor(dt2$haul_no)
-if (class(dt2$species_id)!="factor") dt2$species_id<- as.factor(dt2$species_id)
-if (class(dt2$species_code)!="factor") dt2$species_code<- as.factor(dt2$species_code)
-if (class(dt2$genus_name)!="factor") dt2$genus_name<- as.factor(dt2$genus_name)
-if (class(dt2$species_name)!="factor") dt2$species_name<- as.factor(dt2$species_name)
-if (class(dt2$count)=="factor") dt2$count <-as.numeric(levels(dt2$count))[as.integer(dt2$count) ]               
-if (class(dt2$count)=="character") dt2$count <-as.numeric(dt2$count)
-                
-# Convert Missing Values to NA for non-dates
-                
-dt2$survey <- as.factor(ifelse((trimws(as.character(dt2$survey))==trimws("-99999")),NA,as.character(dt2$survey)))
-dt2$date <- as.factor(ifelse((trimws(as.character(dt2$date))==trimws("-99999")),NA,as.character(dt2$date)))
-dt2$wetland_code <- as.factor(ifelse((trimws(as.character(dt2$wetland_code))==trimws("-99999")),NA,as.character(dt2$wetland_code)))
-dt2$module_code <- as.factor(ifelse((trimws(as.character(dt2$module_code))==trimws("-99999")),NA,as.character(dt2$module_code)))
-dt2$tc_mc_code <- as.factor(ifelse((trimws(as.character(dt2$tc_mc_code))==trimws("-99999")),NA,as.character(dt2$tc_mc_code)))
-dt2$habitat_code <- as.factor(ifelse((trimws(as.character(dt2$habitat_code))==trimws("-99999")),NA,as.character(dt2$habitat_code)))
-dt2$seine_section_code <- as.factor(ifelse((trimws(as.character(dt2$seine_section_code))==trimws("-99999")),NA,as.character(dt2$seine_section_code)))
-dt2$seine_label <- as.factor(ifelse((trimws(as.character(dt2$seine_label))==trimws("-99999")),NA,as.character(dt2$seine_label)))
-dt2$seine_sample_width <- ifelse((trimws(as.character(dt2$seine_sample_width))==trimws("-99999")),NA,dt2$seine_sample_width)               
-suppressWarnings(dt2$seine_sample_width <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$seine_sample_width))==as.character(as.numeric("-99999"))),NA,dt2$seine_sample_width))
-dt2$seine_sample_length <- ifelse((trimws(as.character(dt2$seine_sample_length))==trimws("-99999")),NA,dt2$seine_sample_length)               
-suppressWarnings(dt2$seine_sample_length <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$seine_sample_length))==as.character(as.numeric("-99999"))),NA,dt2$seine_sample_length))
-dt2$seine_sample_area <- ifelse((trimws(as.character(dt2$seine_sample_area))==trimws("-99999")),NA,dt2$seine_sample_area)               
-suppressWarnings(dt2$seine_sample_area <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$seine_sample_area))==as.character(as.numeric("-99999"))),NA,dt2$seine_sample_area))
-dt2$depth <- ifelse((trimws(as.character(dt2$depth))==trimws("-99999")),NA,dt2$depth)               
-suppressWarnings(dt2$depth <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$depth))==as.character(as.numeric("-99999"))),NA,dt2$depth))
-dt2$haul_no <- as.factor(ifelse((trimws(as.character(dt2$haul_no))==trimws("-99999")),NA,as.character(dt2$haul_no)))
-dt2$species_id <- as.factor(ifelse((trimws(as.character(dt2$species_id))==trimws("-99999")),NA,as.character(dt2$species_id)))
-dt2$species_code <- as.factor(ifelse((trimws(as.character(dt2$species_code))==trimws("-99999")),NA,as.character(dt2$species_code)))
-dt2$genus_name <- as.factor(ifelse((trimws(as.character(dt2$genus_name))==trimws("-99999")),NA,as.character(dt2$genus_name)))
-dt2$species_name <- as.factor(ifelse((trimws(as.character(dt2$species_name))==trimws("-99999")),NA,as.character(dt2$species_name)))
-dt2$count <- ifelse((trimws(as.character(dt2$count))==trimws("-99999")),NA,dt2$count)               
-suppressWarnings(dt2$count <- ifelse(!is.na(as.numeric("-99999")) & (trimws(as.character(dt2$count))==as.character(as.numeric("-99999"))),NA,dt2$count))
-
-
-# Here is the structure of the input data frame:
-str(dt2) 
-attach(dt2)                            
-# The analyses below are basic descriptions of the variables. After testing, they should be replaced.                 
-
-summary(year)
-summary(survey)
-summary(date)
-summary(wetland_code)
-summary(module_code)
-summary(tc_mc_code)
-summary(habitat_code)
-summary(seine_section_code)
-summary(seine_label)
-summary(seine_sample_width)
-summary(seine_sample_length)
-summary(seine_sample_area)
-summary(depth)
-summary(haul_no)
-summary(species_id)
-summary(species_code)
-summary(genus_name)
-summary(species_name)
-summary(count) 
-                # Get more details on character variables
-                 
-summary(as.factor(dt2$survey)) 
-summary(as.factor(dt2$date)) 
-summary(as.factor(dt2$wetland_code)) 
-summary(as.factor(dt2$module_code)) 
-summary(as.factor(dt2$tc_mc_code)) 
-summary(as.factor(dt2$habitat_code)) 
-summary(as.factor(dt2$seine_section_code)) 
-summary(as.factor(dt2$seine_label)) 
-summary(as.factor(dt2$haul_no)) 
-summary(as.factor(dt2$species_id)) 
-summary(as.factor(dt2$species_code)) 
-summary(as.factor(dt2$genus_name)) 
-summary(as.factor(dt2$species_name))
-detach(dt2)               
-        
-### end pre-written code from ERI website ###
-
-view(dt2)
-
-dt2 %>% 
-  filter(wetland_code == "CSM") %>% 
-  group_by(date) %>% 
-  summarize(count = sum(count)) %>% 
-  view()
-
-dt2 %>% 
-  filter(wetland_code == "CSM", species_code == "URHA") %>%
-  group_by(date) %>% 
-  summarize(count = sum(count)) %>% 
-  ggplot(aes(x = date, y = count)) +
-    geom_point()
+## read clean csv
+```{r}
+daily_3yr_dat <- read.csv("data/daily_3yr_dat_clean.csv")
 ```
 
 ## Dataframe without 2019
@@ -1371,12 +933,12 @@ sum(daily_3yr_dat$total_unique, na.rm = TRUE)
 
 daily_3yr_dat %>% 
   group_by(year) %>% 
-  summarize(surveys = n(), total_sightings = sum(total_unique, na.rm = TRUE), mean_count = mean(total_unique, na.rm = TRUE))
-#2019:     98 surveys, 44 total sharks, 0.449 sharks/survey
-#2020:    113          271              2.42 
-#2021:    140          597              4.36 
+  summarize(surveys = n(), total_sightings = sum(total_unique, na.rm = TRUE), mean_count = mean(total_unique, na.rm = TRUE), sd_count = sd(total_unique, na.rm = TRUE))
+#2019:     98 surveys, 44 total sharks, 0.449 sharks/survey, sd = 1.24
+#2020:    113          271              2.42                 sd = 2.87
+#2021:    140          597              4.36                 sd = 3.37
 
-year_aov <- aov(total_unique ~ year, data = daily_3yr_dat)
+year_aov <- aov(total_unique ~ as.factor(year), data = daily_3yr_dat)
 summary(year_aov)
 TukeyHSD(year_aov)
 
@@ -1581,55 +1143,6 @@ dat_no_19 %>%
 ```
 *This is further support for using manual - but transect densities are going to have to be used anyways for comparing across all three years?
 
-### GLM approach to comparing methods (halting work on this while I try a paired-samples Wilcoxon, see next chunk. I don't think I'll be using GLM for this)
-```{r}
-method_glm_dat <- dat_no_19 %>% 
-  filter(!is.na(transect_total)) %>% 
-  filter(!is.na(transect_area_km2)) %>% 
-  filter(!is.na(manual_unique)) %>% 
-  filter(!is.na(manual_area_km2)) %>%
-  select(transect_area_km2, manual_area_km2,
-         transect_total, manual_unique, date) %>%
-  rename("transect" = transect_total) %>% 
-  rename("manual" = manual_unique) %>% 
-  pivot_longer(c(transect, manual), names_to = "method",
-                                    values_to = "count") %>% 
-  pivot_longer(c(transect_area_km2, manual_area_km2), names_to = "area_method",
-                                    values_to = "area") %>% 
-  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0)
-#selects every 1st and 4th row (remainder 1 and remainder 0)
-
-method_glm_pois <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = "poisson")
-
-met_res <- simulateResiduals(method_glm_pois)
-plot(met_res)
-#poisson no bueno (overdispersed)
-
-method_glm_nb2 <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = nbinom2)
-
-met_res <- simulateResiduals(method_glm_nb2)
-plot(met_res)
-
-testQuantiles(met_res)
-# nb2 better, but not great
-
-method_glm_nb1 <- glmmTMB(count ~ method + offset(log(area)) + (1|year), data = method_glm_dat, family = nbinom1)
-
-met_res <- simulateResiduals(method_glm_nb1)
-plot(met_res)
-#nb1 worse, going to try a ZI with nbinom2:
-
-method_glm_zi <- glmmTMB(count ~ method + offset(log(area)) + (1|year),
-                         ziformula = ~1, data = method_glm_dat,
-                         family = nbinom2, na.action = "na.fail")
-
-met_res <- simulateResiduals(method_glm_zi)
-plot(met_res)
-
-dredge(method_glm_zi)
-#best model doesn't even include method
-```
-
 ### Wilcoxon signed-rank test on counts
 ```{r}
 paired_dat <- method_glm_dat %>% 
@@ -1823,42 +1336,6 @@ ggsave("plots/method_comp_plot_final.png", width = 6, heigh = 7)
 # count is scaled up by a factor of 10 and rate is scaled up by a factor of 100. Only sig diff is count.
 ```
 
-### Misadventures in plotting:
-```{r}
-#also will try to plot rate as minutes per shark to avoid the 100x:
-
-manual_time <- mutate(manual_rate, value = 10/rate, method = "manual", metric = "time")
-transect_time <- mutate(transect_rate, value = 10/rate, method = "transect", metric = "time")
-
-comp_vis_time <- bind_rows(manual_counts, transect_counts, manual_dens, transect_dens, manual_time, transect_time)
-
-#count is 10x and "time" is minutes per shark x10 (which is not intuitive at all - I;m definitely not going to use this
-ggplot(comp_vis_time, aes(x = metric, y = value)) +
-  geom_boxplot(aes(color = method))
-
-# now let's try standardizing by the manual metric:
-manual_counts_stan <- mutate(manual_counts, value = count, method = "manual", metric = "count")
-transect_counts_stan <- mutate(transect_counts, value = count, method = "transect", metric = "count")
-
-counts_stan <- bind_cols(manual_counts_stan, transect_counts_stan)
-counts_stan <- mutate(counts_stan, manual = 1, transect = value...8/value...4)
-counts_stan <- pivot_longer(counts_stan, 9:10)
-
-manual_dens_stan <- mutate(manual_dens, value = density, method = "manual", metric = "density")
-transect_dens_stan <- mutate(transect_dens, value = density, method = "transect", metric = "density")
-
-density_stan <- bind_cols(manual_dens_stan, transect_dens_stan)
-density_stan <- mutate(density_stan, manual = 1, transect = value...8/value...4)
-density_stan <- pivot_longer(density_stan, 9:10)
-
-count_and_dens_stan_dat <- bind_rows(counts_stan, density_stan)
-View(count_and_dens_stan_dat)
-
-ggplot(count_and_dens_stan_dat, aes(x = metric...3, y = value...10)) +
-  geom_boxplot(aes(color = name))
-#stupid idea lol
-```
-
 ## Patterns of Abundance
 
 ### What are the average and range of transect detections?
@@ -1877,216 +1354,6 @@ daily_3yr_dat %>%
                "Average density" ~ px(80)) %>% 
     cols_align(align = "center")
 ```
-
-### Do detections vary across years? (GLM) - EVERYTHING FROM HERE TO "SIZE" IS REDUNDANT WITH THE GLOBAL GAM STUFF BELOW
-```{r}
-daily_3yr_dat %>% 
-  ggplot(aes(x = year, y = total_unique)) +
-    geom_violin()
-
-ggplot(daily_3yr_dat, aes(x = total_unique)) +
-  geom_bar()
-#very zero-inflated
-
-ggplot(daily_3yr_dat, aes(x = log1p(total_unique))) +
-  geom_bar()
-#going to need poisson
-
-year_poisson_mod <- glm(total_unique ~ year, family = "poisson", data = daily_3yr_dat)
-
-summary(year_poisson_mod)
-dispersiontest(year_poisson_mod)
-ypm_res <- simulateResiduals(year_poisson_mod)
-plot(ypm_res)
-#definitely overdispersed
-
-year_qpois_mod <- glm(total_unique ~ year, family = "quasipoisson", data = daily_3yr_dat)
-
-summary(year_qpois_mod)
-
-year_nb_mod <- glmmTMB(total_unique ~ year, family = nbinom2, data = daily_3yr_dat)
-
-summary(year_nb_mod)
-ynm_res <- simulateResiduals(year_nb_mod)
-plot(ynm_res)
-#dispersion still significant
-
-year_nb1_mod <- glmmTMB(total_unique ~ year, family = nbinom1, data = daily_3yr_dat)
-
-summary(year_nb1_mod)
-yn1m_res <- simulateResiduals(year_nb1_mod)
-plot(yn1m_res)
-#Negative binomial 1 checks out
-
-pairs(emmeans(year_nb1_mod, ~year))
-
-daily_3yr_dat %>% 
-  group_by(year) %>% 
-  summarize(mean = mean(total_unique, na.rm = TRUE))
-
-year_trans_nb1_mod <- glmmTMB(transect_total ~ year, family = nbinom1, data = daily_3yr_dat)
-
-summary(year_trans_nb1_mod)
-ytn1m_res <- simulateResiduals(year_trans_nb1_mod)
-plot(ytn1m_res)
-
-pairs(emmeans(year_trans_nb1_mod, ~year))
-```
-* based on GLM with ONLY year, total unique sightings increased each year from 2019 to 2021 (p < 0.0001)
-* based on GLM with ONLY year, transect sightings increased each year from 2019 to 2021 (p < 0.0005)
-
-
-### Manual sightings only
-```{r}
-daily_3yr_dat %>% 
-  ggplot(aes(x = year, y = manual_unique)) +
-    geom_violin()
-
-year_manual_mod <- glmmTMB(manual_unique ~ year, family = nbinom1, data = daily_3yr_dat)
-
-summary(year_manual_mod)
-ymm_res <- simulateResiduals(year_manual_mod)
-plot(ymm_res)
-#Negative binomial 1 checks out
-
-pairs(emmeans(year_manual_mod, ~year))
-
-daily_3yr_dat %>% 
-  group_by(year) %>% 
-  summarize(mean = mean(manual_unique, na.rm = TRUE))
-```
-* based on GLM with ONLY year, manual unique sightings were higher in 2021 than 2020 (p < 0.005)
-
-### Do detections vary across the field season?
-```{r}
-season_lm <- lm((1000000*transect_total/transect_area_m2) ~ day, data = daily_3yr_dat)
-summary(season_lm)
-#no apparent linear trend
-
-season2_lm <- lm((1000000*transect_total/transect_area_m2) ~ day + day2, data = daily_3yr_dat)
-summary(season2_lm)
-#no quadratic trend (not sure this is a meaningful test anyways)
-```
-
-### Adding "day" to the year model
-```{r}
-daily_3yr_narm <- daily_3yr_dat %>%
-  filter(transect_area_m2 > 10) %>% 
-  mutate(transect_area_km2 = transect_area_m2/1000000) %>% 
-  filter(!is.na(transect_total)) %>% 
-  filter(!is.na(transect_area_km2)) %>% 
-  rowwise() %>% 
-  mutate(total_area_km2 = sum(transect_area_km2, manual_area_km2, na.rm = TRUE)) %>% 
-  mutate(total_dens = total_unique/total_area_km2) %>% 
-  filter(!is.na(total_unique)) %>% 
-  filter(!is.na(total_area_km2)) %>% 
-  filter(!is.na(date_hour)) %>% 
-  mutate(hour = as.numeric(hour(date_hour)))
-  
-season_glm <- glmmTMB(transect_total ~ year*day + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
-
-summary(season_glm)
-
-dredge(season_glm)
-#day*year interaction model is best candidate - but I don't have any replication for many days due to non-overlapping survey window
-
-sm_res <- simulateResiduals(season_glm)
-plot(sm_res)
-#minor issue with quantiles. Don't think it is a problem based on what I've read about that test
-```
-* Best model to explain transect sightings includes day, year, and their interaction.
-
-### Alternative approach to comparing years ("day" plus looking at survey-related variables like time of day, area surveyed, etc.)
-```{r}
-year_glm <- glmmTMB(transect_total ~ year*hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
-#use log(area) because negative binomial models the log of the mean
-
-summary(year_glm)
-
-yr_res <- simulateResiduals(year_glm)
-plot(yr_res)
-
-dredge(year_glm)
-#year*hour w/out area is best, but I'm not sure that the interaction between year and hour is meaningful (no reason a priori to think that the effect of time of day would depend on year)...
-```
-
-### Final modeling procedure - full survey window, transect sightings only
-```{r}
-year_glm <- glmmTMB(transect_total ~ year + day + hour + offset(log(transect_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
-
-summary(year_glm)
-
-yr_res <- simulateResiduals(year_glm)
-plot(yr_res)
-##minor issue with quantiles in global model (not when day is included). Don't think it is a problem based on what I've read about that test
-
-dredge(year_glm)
-#best model to explain transect sightings includes year, day, and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year, day, and hour:
-
-year_glm_best <- glmmTMB(transect_total ~ year + day + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail") #log link
-
-summary(year_glm_best)
-
-#diagnose best model:
-yr_bst_res <- simulateResiduals(year_glm_best)
-plot(yr_bst_res)
-#passes DHARMa checks
-
-Anova(year_glm)
-year_emms <- emmeans(year_glm, "year")
-pwpm(year_emms, type = "response")
-
-daily_3yr_narm %>% 
-  group_by(year) %>% 
-  summarize(density = mean(transect_total/transect_area_km2))
-```
-* Best model is year + day + hour with no offset for area surveyed
-* adding area surveyed increases AIC (transect area has very low variation, so it makes sense that adding it as a predictor doesn't contribute much info)
-
-### Effects testing of final "year" GLM - full survey window, transect sightings only
-```{r}
-Anova(year_glm_best)
-# year, day, and hour have significant effects on sightings (which we already know from the model selection process)
-
-year_emms <- emmeans(year_glm_best, "year")
-pwpm(year_emms, type = "response") #on the response, not the log, scale
-#I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
-
-#compare to ANOVA (sanity check):
-year_aov <- aov(transect_total ~ year, data = daily_3yr_narm)
-summary(year_aov)
-TukeyHSD(year_aov, which = "year")
-#sightings differ significantly btwn 2021 and 2020/2019, but not between 2019 and 2020 (although p-value is lower than in the GLM because time of survey is not being taken into account in the anova)
-
-emmeans(year_glm_best, "hour", type = "response")
-#this is just saying that average time of survey is at 11:48 AM (and average sightings = 1.12 at that time based on the model?)
-
-emmeans(year_glm_best, "day", type = "response")
-#this is just saying that average day of survey is August 26th (ish) (and average sightings = 1.12 at that time based on the model?)
-
-allEffects(year_glm_best)
-plot(allEffects(year_glm_best))
-#nice little plot
-
-emmip(year_glm_best, hour ~ year)
-emmip(year_glm_best, day ~ year)
-
-daily_3yr_narm %>% 
-  filter(year == 2019) %>% 
-  summarize(mean = mean(transect_total))
-# 2019 mean = 0.54321
-
-daily_3yr_narm %>% 
-  filter(year == 2020) %>% 
-  summarize(mean = mean(transect_total))
-# 2020 mean = 1.17143
-
-daily_3yr_narm %>% 
-  filter(year == 2021) %>% 
-  summarize(mean = mean(transect_total))
-# 2021 mean = 2.82171
-```
-* 2019-2020 contrast isn't significant in either the simple (year-only) AOV or in the year + day + hour glm. This suggests that other factors are driving increased sightings from 2019 to 2020. We know that time of day and day of year explain sightings, so we should test if these factors vary significantly between years - if they do, they may be driving the difference in shark sightings between 2019-2020
 
 ### Are time of day and day of year different between years?
 ```{r}
@@ -2140,118 +1407,6 @@ daily_3yr_dat %>%
 ggsave("plots/dens_years_overlaid.png", width = 7, height = 4)
 ```
 
-### Final modeling procedure - full survey window, all sightings (work on this started 4/3/22)
-```{r}
-year_total_glm <- glmmTMB(total_unique ~ year + day + hour + offset(log(total_area_km2)), family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
-#log(area) is used because nbinom1 uses a log link, so total_unique is on the log scale
-
-summary(year_total_glm)
-
-yr_res <- simulateResiduals(year_total_glm)
-plot(yr_res)
-##minor issue with quantiles in global model. Don't think it is a problem based on what I've read about that test
-
-dredge(year_total_glm)
-
-#like with transect-only, best model to explain total sightings includes year, day, and hour of survey, but not area surveyed - if this were a predictive model, I would keep area in, but since it doesn't contribute additional explanatory power to the patterns that I already saw, leaving it out will give us a better understanding of the effects of year, day, and hour:
-
-year_total_glm_best <- glmmTMB(total_unique ~ year + day + hour, family = nbinom1, data = daily_3yr_narm, na.action = "na.fail")
-
-summary(year_total_glm_best)
-
-#diagnose best model:
-yr_tot_bst_res <- simulateResiduals(year_total_glm_best)
-plot(yr_tot_bst_res)
-#passes DHARMa checks
-```
-
-### Effects testing of full model (4/3)
-```{r}
-Anova(year_total_glm)
-# year, day, and hour have significant effects on density (which we already know from the model selection process)
-
-year_tot_emms <- emmeans(year_total_glm, "year")
-pwpm(year_tot_emms, type = "response") #on the response, not the log, scale
-#I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
-#like transect count, 2019-2020 contrast is not significant for total density
-
-#compare to ANOVA (sanity check):
-year_total_aov <- aov(total_unique ~ year, data = daily_3yr_narm)
-summary(year_total_aov)
-TukeyHSD(year_total_aov, which = "year")
-#sightings differ significantly between all years
-
-emmeans(year_total_glm, "hour", type = "response")
-#this is just saying that average time of survey is at 11:48 AM (and average density = 2.02 at that time based on the model?)
-
-emmeans(year_total_glm, "day", type = "response")
-#this is just saying that average day of survey is August 26th (ish) (and average density = 2.02 at that time based on the model?)
-
-allEffects(year_total_glm)
-plot(allEffects(year_total_glm))
-
-emmip(year_total_glm, hour ~ year)
-emmip(year_total_glm, day ~ year)
-#idk what these are doing, they look exactly the same
-
-daily_3yr_narm %>% 
-  group_by(year) %>% 
-  summarize(mean = mean(total_dens))
-# 2019 mean = 3.53
-# 2020 mean = 5.12
-# 2021 mean = 12.8
-
-daily_3yr_narm %>% 
-  filter(year == 2020) %>% 
-  summarize(mean = mean(total_dens))
-# no idea why this stopped working (also stopped working in transect-only chunk above)
-```
-* Best model is year + day + hour with no offset for area surveyed
-* adding area surveyed increases AIC
-
-### Effects testing of final "year" GLM - full survey window, all sightings
-```{r}
-Anova(year_total_glm_best)
-# year, day, and hour have significant effects on sightings (which we already know from the model selection process)
-
-year_total_emms <- emmeans(year_total_glm_best, "year")
-pwpm(year_total_emms, type = "response") #on the response, not the log, scale
-#I really like this summary matrix for year - includes emmeans for each level, comparisons of said estimates between levels, and tukey p-values for each pairwise comparison
-#UNLIKE transect only, 2019-2020 contrast is highly significant
-
-#compare to ANOVA (sanity check):
-year_total_aov <- aov(total_unique ~ year, data = daily_3yr_narm)
-summary(year_total_aov)
-TukeyHSD(year_total_aov, which = "year")
-#sightings differ significantly between all years
-
-emmeans(year_total_glm_best, "hour", type = "response")
-#this is just saying that average time of survey is at 11:48 AM (and average sightings = 1.66 at that time based on the model?)
-
-emmeans(year_total_glm_best, "day", type = "response")
-#this is just saying that average day of survey is August 26th (ish) (and average sightings = 1.66 at that time based on the model?)
-
-allEffects(year_total_glm_best)
-plot(allEffects(year_total_glm_best))
-#nice little plot, biggest difference from transect-only is that 2020 is now significantly higher than 2021
-
-emmip(year_total_glm_best, hour ~ year)
-emmip(year_total_glm_best, day ~ year)
-#idk what these are doing, they look exactly the same
-
-daily_3yr_narm %>% 
-  group_by(year) %>% 
-  summarize(mean = mean(total_unique))
-# 2019 mean = 0.543
-# 2020 mean = 2.4
-# 2021 mean = 4.32
-
-daily_3yr_narm %>% 
-  filter(year == 2020) %>% 
-  summarize(mean = mean(total_unique))
-# no idea why this stopped working (also stopped working in transect-only chunk above)
-```
-
 ### Comparing survey windows
 ```{r}
 nrow(dat_2019)
@@ -2270,45 +1425,6 @@ last(dat_2021$date)
 #142 survey days in 2021 from April 20 to December 18
 ```
 * I definitely *could* do analyses with only the overlapping window but since day is included I think it makes more sense to keep all of the data that I have
-
-### Copying above approach but with GAM - probably won't use GAM for year analysis
-```{r}
-gam_dat <- daily_3yr_dat %>% 
-  filter(!is.na(transect_total)) %>% 
-  filter(!is.na(year)) %>% 
-  mutate(transect_total = as.numeric(transect_total)) %>% 
-  mutate(year = as.factor(year)) %>% 
-  filter(!is.na(date_hour)) %>% 
-  mutate(hour = as.numeric(hour(date_hour)))
-
-year_gam <- mgcv::gam(transect_total ~ year + s(hour) + s(day) + offset(transect_area_km2), data = gam_dat)
-
-summary(year_gam)
-# edf for "hour" = 1, so it's being modeled as linear.
-
-mgcv::gam.check(year_gam)
-plot(year_gam, residuals = TRUE, pch = 1)
-
-year_lm <- lm(transect_total ~ year, data = gam_dat)
-anova(year_lm, year_gam)
-
-hour_gam <- mgcv::gam(transect_total ~ s(hour), data = gam_dat)
-summary(hour_gam)
-mgcv::gam.check(hour_gam)
-plot(hour_gam, residuals = TRUE, pch = 1)
-```
-
-### Year is categorical so it doesn't make sense to use GAM unless hour or day has a non-linear effect on count:
-```{r}
-ggplot(gam_dat, aes(x = hour, y = total_unique))+
-  geom_jitter() +
-  geom_smooth()
-
-ggplot(gam_dat, aes(x = day, y = transect_total))+
-  geom_jitter() +
-  geom_smooth()
-```
-* no strong evidence that I should favor a GAM here
 
 ### Do manual counts vary across the field season?
 ```{r}
@@ -2520,9 +1636,9 @@ size_dat_2021 %>%
 #this stinks
 ```
 
-### How do adjustments affect size distribution?
+### Do adjustments affect size distribution?
 ```{r}
-size_dat_3yr%>% 
+size_dat_3yr %>% 
   filter(unique == "Y") %>% 
   filter(!is.na(length_adj)) %>%
   filter(length_adj_m > 1) %>%
@@ -2668,9 +1784,15 @@ daily_3yr_dat %>%
 
 daily_3yr_dat %>% 
   filter(total_sized != 0) %>% 
-  ggplot(aes(x = juvenile/total_sized, fill = year)) +
+  ggplot(aes(x = juvenile/total_sized, fill = as_factor(year))) +
     geom_histogram(position = "dodge", bins = 10)
-#2021 has a LOT of days where there were only adult-sized sharks, and 2020 has tons of days where only juvenile-sized sharks were seen
+#2021 has a LOT of days where there were only adult-sized sharks, and 2020 has tons of days where only juvenile-sized sharks were seen - I want a better way to visualize this for Ch. 2
+
+daily_3yr_dat %>% 
+  filter(total_sized != 0) %>% 
+  ggplot(aes(x = juvenile/total_sized, color = as_factor(year))) +
+    geom_density(size = 1.1, adjust = 0.5)
+ggsave("plots/yearly_juv_prop_density.png")
 ```
 
 ## Modelling effects of environmental and detection-related variables on transect density
@@ -3563,9 +2685,8 @@ lbgam_tot <- mgcv::gam(total_unique ~ year +
                        na.action = "na.fail")
 ```
 
-### Working version as of 6/28: day instead of month, CSULB or LTER sft data, total count
+### Working version as of 7/4: day instead of month, CSULB or LTER sft data, total count
 ```{r}
-######################
 gam_dat_lb_tot_full <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
   mutate(hour = as.numeric(hour(date_hour))) %>%
@@ -3582,14 +2703,13 @@ lbgam_tot_full <- mgcv::gam(total_unique ~ year +
                                       s(yday, k = 30, by = year) +
                                       beaufort +
                                       vis +
-                                      s(tide, k = 50) +
-                                      s(sft, k = 50) +
+                                      s(tide, k = 40) +
+                                      s(sft, k = 40) +
                                       s(WVHT, k = 15) +
                                       s(salinity, k = 10) +
                                       offset(total_area),
                        data = gam_dat_lb_tot_full, 
                        method = "REML", family = nb, select = TRUE)
-
 
 summary(lbgam_tot_full)
 #DE = 62.2, n = 249
@@ -3597,7 +2717,7 @@ summary(lbgam_tot_full)
 visreg(lbgam_tot_full)
 
 anova(lbgam_tot_full)
-#year and vis significant parametrics, beaufort marginal at p = 0.068
+#year and vis significant parametrics, beaufort marginal
 #hour sig in 2020 and 2021, not 2019
 #day sig. in all years
 #tide and sft significant
@@ -3615,7 +2735,114 @@ mgcv::concurvity(lbgam_tot_full, full = FALSE)
 #what does it mean that day and hour are concurved within each year? 
 ```
 
-### Dropping terms to test sensitivity to concurvity
+### Adding interpolated chl to the above
+```{r}
+lbgam_tot_chl <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 35, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 35) +
+                                      s(sft, k = 35) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(lbgam_tot_chl)
+#DE = 58.4, n = 235
+#DE of non-chl model = 62.2, n = 249
+
+visreg(lbgam_tot_chl)
+gam.check(lbgam_tot_chl)
+#again, waveheight is only issue - could drop
+
+anova(lbgam_tot_chl)
+#year and vis significant
+#hour only significant in 2021
+#day significant in 2019 and 2020, marginal in 2021
+#tide and salinity significant
+#chl p = 0.11
+#sft and waveheight penalized to zero
+
+#adding chl removed effect of sft...
+lbgam_tot_chl_no_sft <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 25, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 50) +
+                                      s(WVHT, k = 15) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 5) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_tot_chl_no_sft)
+anova(lbgam_tot_chl_no_sft)
+
+mgcv::concurvity(lbgam_tot_chl, full = F)
+mgcv::concurvity(lbgam_tot_chl_no_sft, full = T)
+mgcv::concurvity(lbgam_tot_full, full = T)
+#no-sft model has lower concurvity of envt'l terms w/rest of model
+
+mgcv::concurvity(lbgam_tot_chl_no_sft, full = F)
+```
+
+### Comparing a model w/ sft as only envt'l variable to one with all other envt's variables but no sft
+```{r}
+lbgam_sft_only <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 25, by = year) +
+                                      s(sft, k = 50) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+gam.check(lbgam_sft_only)
+summary(lbgam_sft_only)
+#50.5 DE! n = 313
+
+anova(lbgam_sft_only)
+
+visreg(lbgam_sft_only)
+
+summary(lbgam_tot_chl_no_sft)
+#59.1% DE n = 237
+
+summary(lbgam_tot_chl)
+#58.4% n = 235
+
+summary(lbgam_tot_full)
+#DE = 62.2%, n = 249
+
+#sft-only model (no tide, wvht, chl, or salinity) explains slightly MORE deviance than the model without sft and the global model
+
+AICc(lbgam_sft_only, lbgam_tot_chl_no_sft, lbgam_tot_chl, lbgam_tot_full)
+#but AIC is much higher, along with the model w/out chl
+
+#It's clear that sft and chl are not getting along, which may make sense since they aren't super correlated with one another:
+
+ggplot(daily_3yr_dat, aes(x = sft, y = chl_interp)) +
+  geom_point() +
+  geom_smooth()
+
+lbgam_sft_chl_only <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 25, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(sft, k = 50) +
+                                      s(chl_interp, k = 5) +
+                                      offset(total_area),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lbgam_sft_chl_only)
+#chl marginal and sft penalized to zero
+```
+
+### Dropping terms to test sensitivity to concurvity - no chl version
 ```{r}
 lbgam_tot_no_wvht <- mgcv::gam(total_unique ~ year +
                                       s(hour, k = 10, by = year) +
@@ -3756,21 +2983,13 @@ summary(lbgam_tot_full_no_hr)
 #sft, wvht, tide ns, vis 0.08, beau = 0.09, month_fac = 0.055, DE = 99.5
 anova(lbgam_tot_full_no_hr)
 
-
-
-
-
-
-
-
-
-
-
-
 visreg(lbgam_tot_full)
 
 gam.check(lbgam_tot_full)
+```
 
+### comparing sst and sft using 2021
+```{r}
 gam_dat_2021 <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
   filter(year == 2021) %>%
@@ -3778,53 +2997,195 @@ gam_dat_2021 <- daily_3yr_dat %>%
   mutate(beaufort = as.factor(beaufort)) %>% 
   mutate(vis = as.factor(vis)) %>% 
   mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
-  mutate(month = month(mdy)) 
+  mutate(yday = yday(mdy))
 
-sst_2021_gam <- mgcv::gam(total_unique ~ year +
-                                      s(hour, k = 10, by = year) +
-                                      s(month, k = 8, by = year) +
+sst_2021_gam <- mgcv::gam(total_unique ~
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10) +
                                       beaufort +
                                       vis +
                                       s(tide, k = 10) +
                                       s(sst, k = 10) +
                                       s(WVHT, k = 10) +
-                                      s(chl) +
+                                      s(chl_interp, k = 10) +
                                       offset(total_area),
-                       data = gam_dat_lb_tot_full, 
+                       data = gam_dat_2021, 
                        method = "REML", family = nb, select = TRUE)
 summary(sst_2021_gam)
+#47.6% DE, n = 120
+visreg(sst_2021_gam)
 
-sft_2021_gam <- mgcv::gam(total_unique ~ year +
-                                      s(hour, k = 10, by = year) +
-                                      s(month, k = 8, by = year) +
+sft_2021_gam <- mgcv::gam(total_unique ~
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10) +
                                       beaufort +
                                       vis +
                                       s(tide, k = 10) +
                                       s(sft, k = 10) +
                                       s(WVHT, k = 10) +
-                                      s(chl) +
+                                      s(chl_interp) +
                                       offset(total_area),
-                       data = gam_dat_lb_tot_full, 
+                       data = gam_dat_2021, 
                        method = "REML", family = nb, select = TRUE)
 summary(sft_2021_gam)
+#45.1% DE, n = 120
 
+anova(sst_2021_gam)
+#vis, hour, day, tide, SST significant
+#beaufort, chl, and wvht n.s.
+
+anova(sft_2021_gam)
+#vis, hour, day, tide significant
+#SFT NOT SIGNIFICANT
+#beaufort, wvht, chl also n.s.
+
+### Same as above but just using temperature and temporal variables:
+
+sst_only_2021_gam <- mgcv::gam(total_unique ~
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      s(sst, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_2021, 
+                       method = "REML", family = nb, select = TRUE)
+summary(sst_only_2021_gam)
+#30.1% DE, n = 123
+
+sft_only_2021_gam <- mgcv::gam(total_unique ~
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      s(sft, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_2021, 
+                       method = "REML", family = nb, select = TRUE)
+summary(sft_only_2021_gam)
+#21.9% DE, n = 123
+
+anova(sst_only_2021_gam)
+visreg(sst_only_2021_gam)
+#SST is significant and more or less linear (higher sst = higher density)
+
+anova(sft_only_2021_gam)
+visreg(sft_only_2021_gam)
+#SFT is NOT significant, penalized to 0.2 edf
+
+AICc(sst_2021_gam, sft_2021_gam, sst_only_2021_gam, sft_only_2021_gam)
+```
+
+### Juvenile and Adult density models with CSULB sft data
+```{r}
+lb_juv_gam <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 35, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 30) +
+                                      s(sft, k = 30) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lb_juv_gam)
+#DE = 33.8%, n = 229
+
+lb_adult_gam <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10, by = year) +
+                                      s(yday, k = 35, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 30) +
+                                      s(sft, k = 30) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb_tot_full, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lb_adult_gam)
+#39.8% DE, n = 229
+
+anova(lb_juv_gam)
+#year and day (2019 and 2020) significant
+#hour and day in 2021 marginal
+#sft p = 0.1 
+#wvht, salinity, and chl all penalized to zero
+
+anova(lb_adult_gam)
+#year, hour in 2019, day in 2020 significant
+#tide and salinity significant
+#hour in 2020 and day in 2021 marginal
+#sft, wvht, and chl all penalized to zero
+```
+
+### Juvenile and adult density with 2021 sst
+```{r}
+lb_juv_gam_sst <- mgcv::gam(juvenile ~
+                                      s(hour, k = 10) +
+                                      s(yday, k = 20) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 20) +
+                                      s(sst, k = 25) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2021, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lb_juv_gam_sst)
+#DE = 13.2%, n = 108
+visreg(lb_juv_gam_sst)
+
+lb_adult_gam_sst <- mgcv::gam(adult ~
+                                 s(hour, k = 10) +
+                                 s(yday, k = 20) +
+                                 beaufort +
+                                 vis +
+                                 s(tide, k = 20) +
+                                 s(sst, k = 25) +
+                                 s(WVHT, k = 10) +
+                                 s(salinity, k = 10) +
+                                 s(chl_interp, k = 10) +
+                                 offset(area_20m),
+                       data = gam_dat_2021, 
+                       method = "REML", family = nb, select = TRUE)
+summary(lb_adult_gam_sst)
+#DE = 26.1%, n = 108
+visreg(lb_adult_gam_sst)
+
+anova(lb_juv_gam_sst)
+#hour only significant variable
+
+anova(lb_adult_gam_sst)
+#tide and sst significant
+```
+
+### comparing juvenile/adult/all models with sft, and with 2021 sst
+```{r}
+
+
+```
+
+### sst with all years (DELETE)
+```{r}
 sst_gam_tot_full <- mgcv::gam(total_unique ~ year +
                                       s(hour, k = 10, by = year) +
-                                      s(month, k = 8, by = year) +
+                                      s(yday, k = 8, by = year) +
                                       beaufort +
                                       vis +
                                       s(tide, k = 10) +
                                       s(sst, k = 10) +
                                       s(WVHT, k = 10) +
-                                      s(chl) +
+                                      s(chl_interp) +
                                       offset(total_area),
                        data = gam_dat_lb_tot_full, 
                        method = "REML", family = nb, select = TRUE)
 summary(sst_gam_tot_full)
+#DE = 47.2%, n = 123
 anova(sst_gam_tot_full)
 visreg(sst_gam_tot_full)
-
-#######################
 
 summary(lbgam_tot)
 #SFT and WVHT penalized to near-zero
@@ -4312,6 +3673,7 @@ ggplot(aes(x = long, y = lat, color = sft)) +
          scale_color_distiller(palette = "YlOrRd", trans = "reverse")
 
 ```
+
 ### determining deviance explained of each term by dropping it from the global Cabrillo model - as of 5/13 
 *note from Simon Wood: predictors aren't strictly orthogonal, so DE of each term might not sum to DE of global model
 ```{r}
