@@ -155,7 +155,7 @@ flights_plus_channel_dat_2019 <- left_join(dat_2019, channel_dat_2019, by = "dat
 dat_2019 <- flights_plus_channel_dat_2019 %>%
   mutate(wtemp_2 = mean_wtemp_previous_24^2)
 
-view(dat_2019)
+#view(dat_2019)
 ```
 
 ### Size Data Tidying (1 row = 1 individual) - 2019
@@ -581,7 +581,7 @@ write.csv(daily_3yr_dat_backup, "data/daily_3yr_dat_backup.csv")
 #View(daily_3yr_dat_backup)
 ```
 
-### Recovery of clean daily_3yr_dat (so you don't have to re-run everything above if you mess it up)
+### Recovery of daily_3yr_dat (so you don't have to re-run everything above if you mess it up)
 ```{r}
 daily_3yr_dat <- read.csv("data/daily_3yr_dat_backup.csv")
 
@@ -597,8 +597,6 @@ size_dat_3yr <- full_join(size_dat_2yr, size_dat_2021)
 
 size_dat_3yr <- size_dat_3yr %>% 
                   select(!c(26:31))
-
-write.csv(size_dat_3yr, "data/size_dat_3yr.csv")
 ```
 
 ### New 3yr df with size of each unique shark
@@ -882,11 +880,19 @@ daily_3yr_dat <- daily_3yr_dat %>%
 #str(daily_3yr_dat)
 
 write.csv(daily_3yr_dat, "data/daily_3yr_dat_clean.csv")
+
+size_dat_3yr <- size_dat_3yr %>% 
+  mutate(length_raw_m = length_raw_m*res_adjustment_factor) %>% 
+  mutate(length_adj_m = length_raw_m*depth.correction.factor*asl.correction.factor)
+
+write.csv(size_dat_3yr, "data/size_dat_3yr_clean.csv")
 ```
 
-## read clean csv
+## read clean csvs
 ```{r}
 daily_3yr_dat <- read.csv("data/daily_3yr_dat_clean.csv")
+
+size_dat_3yr <- read.csv("data/size_dat_3yr_clean.csv")
 ```
 
 ## Dataframe without 2019
@@ -911,6 +917,8 @@ daily_3yr_dat %>%
 as.period(mdy("5/30/2019") %--% mdy("12/6/2019"), "days")
 #2019 field season was 190 days long
 190/7 #roughly 27 weeks
+
+nrow(filter(daily_3yr_dat, year == 2019))
 98/(190/7) #3.6 surveys/week
 
 daily_3yr_dat %>% 
@@ -920,6 +928,8 @@ daily_3yr_dat %>%
 as.period(mdy("6/24/2020") %--% mdy("12/11/2020"), "days")
 #2020 field season was 170 days long
 170/7 #roughly 24 weeks
+
+nrow(filter(daily_3yr_dat, year == 2020))
 113/(170/7) #4.7 surveys/week
 
 daily_3yr_dat %>% 
@@ -929,6 +939,8 @@ daily_3yr_dat %>%
 as.period(mdy("4/20/2021") %--% mdy("12/18/2021"), "days")
 #2021 field season was 242 days long
 242/7 #roughly 35 weeks
+
+nrow(filter(daily_3yr_dat, year == 2021))
 140/(242/7) #4.0 surveys/week
   
 sum(daily_3yr_dat$total_unique, na.rm = TRUE)
@@ -945,13 +957,23 @@ year_aov <- aov(total_unique ~ as.factor(year), data = daily_3yr_dat)
 summary(year_aov)
 TukeyHSD(year_aov)
 
+ggplot(daily_3yr_dat, aes(x = total_unique)) +
+  geom_histogram() +
+  facet_wrap(vars(year))
+#obviously not normally distributed so idk about anova for year
+
 daily_3yr_dat %>%
   filter(year == 2019) %>% 
   summarize(mean_area = mean(transect_area_km2), mean_duration = mean(transect_duration_min))
 
 daily_3yr_dat %>%
   filter(year != 2019) %>% 
-  summarize(trans_area = mean(transect_area_km2, na.rm = TRUE), trans_duration = mean(transect_duration_min, na.rm = TRUE), man_area = mean(manual_area_km2, na.rm = TRUE), man_duration = mean(manual_duration_min, na.rm = TRUE))
+  summarize(trans_area = mean(transect_area_km2, na.rm = TRUE), trans_duration = mean(transect_duration_min, na.rm = TRUE), man_area = mean(manual_area_km2, na.rm = TRUE), man_area_sd = sd(manual_area_km2, na.rm = TRUE), man_duration = mean(manual_duration_min, na.rm = TRUE), man_duration_sd = sd(manual_duration_min, na.rm = TRUE))
+
+daily_3yr_dat %>% 
+  filter(manual_area_km2 > 0) %>% 
+  nrow()
+#238 manual surveys conducted
 
 daily_3yr_dat %>% 
   filter(total_unique > 0) %>% 
@@ -1148,7 +1170,22 @@ dat_no_19 %>%
 
 ### Wilcoxon signed-rank test on counts
 ```{r}
-paired_dat <- method_glm_dat %>% 
+method_comp_dat <- dat_no_19 %>% 
+  filter(!is.na(transect_total)) %>% 
+  filter(!is.na(transect_area_km2)) %>% 
+  filter(!is.na(manual_unique)) %>% 
+  filter(!is.na(manual_area_km2)) %>%
+  select(transect_area_km2, manual_area_km2,
+         transect_total, manual_unique, date) %>%
+  rename("transect" = transect_total) %>% 
+  rename("manual" = manual_unique) %>% 
+  pivot_longer(c(transect, manual), names_to = "method",
+                                    values_to = "count") %>% 
+  pivot_longer(c(transect_area_km2, manual_area_km2), names_to = "area_method",
+                                    values_to = "area") %>% 
+  filter(row_number() %% 4 == 1 | row_number() %% 4 == 0)
+
+paired_dat <- method_comp_dat %>% 
   select(date, method, count) %>% 
   pivot_wider(names_from = method, values_from = count) %>%
   mutate(diff = manual - transect)
@@ -1212,17 +1249,21 @@ paired_dat %>%
 53/nrow(paired_dat)
 # 24% of days
 
-mean(manual_counts$count)
-#average manual count is 2.28
+mean(daily_3yr_dat$manual_unique, na.rm = TRUE)
+#average manual count is 2.29
+sd(daily_3yr_dat$manual_unique, na.rm = TRUE)
+#sd is 2.44
 
-mean(transect_counts$count)
-# average transect count is 1.93
+daily_3yr_dat %>% 
+  summarize(mean = mean(transect_total, na.rm = TRUE), sd = sd(transect_total, na.rm = TRUE))
+# average transect count is 2.13
+
 ```
 * Manual survey count was significantly more likely to be higher than transect survey count (p < 0.01), with manual count being higher than transect count for 38% of survey days, lower than transect count for 24% of survey days, and equal to transect count for 38% of survey days. Of the 84 days where manual and transect count were equal, 72.6% (61 days) were days where no sharks were seen.
 
 ### Wilcoxon signed-rank test on density
 ```{r}
-paired_dens_dat <- method_glm_dat %>%
+paired_dens_dat <- method_comp_dat %>%
   mutate(density = count/area) %>% 
   select(date, method, density) %>% 
   pivot_wider(names_from = method, values_from = density) %>%
@@ -1248,11 +1289,14 @@ method_dens_test <- wilcox.test(manual_dens$density, transect_dens$density, pair
 method_dens_test
 # NOT more likely to see a higher density of sharks (count per unit area surveyed) in one survey method vs the other
 
-mean(manual_dens$density)
-# average manual density is 11.27 sharks/km2
+mean((daily_3yr_dat$manual_unique/daily_3yr_dat$manual_area_km2), na.rm = TRUE)
+#average manual density is 11.86
+sd((daily_3yr_dat$manual_unique/daily_3yr_dat$manual_area_km2), na.rm = TRUE)
+#sd is 2.44
 
-mean(transect_dens$density)
-# average transect density is 11.25 sharks/km2
+daily_3yr_dat %>% 
+  filter(year!= 2019) %>% 
+  summarize(mean = mean(transect_total/transect_area_km2, na.rm = TRUE), sd = sd(transect_total/transect_area_km2, na.rm = TRUE))
 ```
 
 ### Comparing rates (count per unit time)
@@ -1299,11 +1343,15 @@ method_rate_test <- wilcox.test(manual_rate$rate, transect_rate$rate, paired = T
 method_rate_test
 # Not more likely for manual or transect to have a higher rate
 
-mean(manual_rate$rate)
-#average manual rate is 0.205 sharks/min
-View(manual_counts)
-mean(transect_rate$rate)
-# average transect rate is 0.185 sharks/km2
+
+mean((daily_3yr_dat$manual_unique/daily_3yr_dat$manual_duration_min), na.rm = TRUE)
+#average manual rate is 0.21
+sd((daily_3yr_dat$manual_unique/daily_3yr_dat$manual_duration_min), na.rm = TRUE)
+#sd is 0.25
+
+daily_3yr_dat %>% 
+  filter(year!= 2019) %>% 
+  summarize(mean = mean(transect_total/transect_duration_min, na.rm = TRUE), sd = sd(transect_total/transect_duration_min, na.rm = TRUE))
 ```
 
 ### Visualizing manual vs transect metrics - data prep
@@ -1582,19 +1630,42 @@ TukeyHSD(depth_aov)
 
 ### histograms of each depth category
 ```{r}
-size_dat_2021 %>% 
-  filter(depth == "surface") %>%
+size_dat_3yr %>% 
+  filter(depth..JP. == "surface") %>%
   filter(unique == "Y") %>% 
   filter(!is.na(length_adj)) %>% 
   nrow()
-#only 13 unique surface sharks
+#54 unique surface sharks...
 
-size_dat_2021 %>% 
-  filter(!is.na(depth)) %>%
-  filter(unique == "Y") %>%
-  filter(!is.na(length_adj)) %>%
+size_dat_3yr %>% 
+  filter(depth..JP. == "shallow") %>%
+  filter(unique == "Y") %>% 
+  filter(!is.na(length_adj)) %>% 
   nrow()
-#out of 291 unique manual sightings
+#...289 shallow sharks...
+
+size_dat_3yr %>% 
+  filter(depth..JP. == "deep") %>%
+  filter(unique == "Y") %>% 
+  filter(!is.na(length_adj)) %>% 
+  nrow()
+#180 deep sharks
+
+size_dat_3yr %>% 
+  filter(!is.na(depth..JP.)) %>%
+  filter(unique == "Y") %>%
+  filter(length_adj_m > 0) %>% 
+  nrow()
+#...out of 524 adjusted-sized sharks
+
+54/524
+# 10.3% surface
+
+289/524
+# 55.2% shallow
+
+180/524
+# 34.4% deep
 
 size_dat_2021 %>% 
   filter(length_adj_m > 0) %>% 
@@ -1631,12 +1702,13 @@ size_dat_2021 %>%
 #this isn't going to be very helpful for comparing between depths
 
 size_dat_2021 %>% 
-  filter(!is.na(length_adj)) %>% 
+  filter(length_adj_m > 0) %>%
+  filter(unique == "Y") %>% 
   pivot_longer(c(length_raw_m, length_adj_m), names_to = "measure", values_to = "length_meters") %>% 
   ggplot(aes(x = length_meters)) +
     geom_histogram(aes(fill = measure), position = "dodge") +
     facet_wrap(~depth..JP.)
-#this stinks
+#this is ok
 ```
 
 ### Do adjustments affect size distribution?
@@ -1685,18 +1757,7 @@ size_dat_3yr %>%
   filter(!is.na(length_adj_m)) %>% 
   filter(!is.na(length_raw_m)) %>%
   filter(length_adj_m > 1) %>%
-  summarize(median_adj = median(length_adj_m), median_raw = median(length_raw_m))
-2.786541-2.529871
-#increase in median size of 0.257 meters
-
-size_dat_3yr %>% 
-  filter(unique == "Y") %>%
-  filter(!is.na(length_adj_m)) %>%
-  filter(!is.na(length_raw_m)) %>%
-  filter(length_adj_m > 1) %>%
-  mutate(adj_diff = length_adj_m - length_raw_m) %>% 
-  summarize(mean_adj_diff = mean(adj_diff))
-#average adjustment was an increase of 0.19 meters
+  summarize(median_adj_length = median(length_adj_m), median_raw_length = median(length_raw_m), mean_adjustment = mean(length_adj_m - length_raw_m), sd_adjustment = sd(length_adj_m - length_raw_m), max_adj = max(length_adj_m - length_raw_m), min_adj = min(length_adj_m - length_raw_m))
 
 #looking at how adjustments affect juvie:adult ratio with the 3m cutoff
 size_dat_3yr %>% 
