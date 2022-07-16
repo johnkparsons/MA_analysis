@@ -54,7 +54,8 @@ library(installr)
 #citation("ptest")
 
 updateR()
-#citation()
+citation()
+RStudio.Version()
 ```
 
 ===========================================================================
@@ -1211,7 +1212,7 @@ nrow(manual_counts)
 # explicitly testing the hypothesis that manual count is higher than transect count:
 method_test <- wilcox.test(manual_counts$count, transect_counts$count, paired = TRUE, alternative = "greater")
 method_test
-#more likely to see more sharks in the manual survey than in the transect survey (p<0.01)
+#manual counts are higher (p<0.01)
 ```
 
 ### Calculating effect size (basically just % of days where manual saw more, transect saw more, or they were the same)
@@ -1253,11 +1254,19 @@ mean(daily_3yr_dat$manual_unique, na.rm = TRUE)
 #average manual count is 2.29
 sd(daily_3yr_dat$manual_unique, na.rm = TRUE)
 #sd is 2.44
+median(daily_3yr_dat$manual_unique, na.rm = TRUE)
+#2
+range(daily_3yr_dat$manual_unique, na.rm = TRUE)
 
-daily_3yr_dat %>% 
-  summarize(mean = mean(transect_total, na.rm = TRUE), sd = sd(transect_total, na.rm = TRUE))
-# average transect count is 2.13
+daily_3yr_dat %>%
+  filter(year != 2019) %>%
+  summarize(mean = mean(transect_total, na.rm = TRUE), sd = sd(transect_total, na.rm = TRUE), median = median(transect_total, na.rm = TRUE), range = range(transect_total, na.rm = TRUE))
+# average 2020/2021 transect count is 2.13
 
+daily_3yr_dat %>%
+  filter(year == 2019) %>% 
+  summarize(mean = mean(transect_total, na.rm = TRUE), sd = sd(transect_total, na.rm = TRUE), median = median(transect_total, na.rm = TRUE), range = range(transect_total, na.rm = TRUE))
+# average 2019 transect count is 0.45
 ```
 * Manual survey count was significantly more likely to be higher than transect survey count (p < 0.01), with manual count being higher than transect count for 38% of survey days, lower than transect count for 24% of survey days, and equal to transect count for 38% of survey days. Of the 84 days where manual and transect count were equal, 72.6% (61 days) were days where no sharks were seen.
 
