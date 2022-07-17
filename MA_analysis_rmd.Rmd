@@ -10,7 +10,7 @@ editor_options:
 # Setup
 ```{r, eval=FALSE}
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", "plyr", "broom.mixed", "ggthemes", "padr", "ptest", "maps", "mapdata", "hexbin", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr"))
-install.packages("ggthemes")
+#install.packages("ggthemes")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -2796,7 +2796,73 @@ visreg(sft_only_2021_gam)
 AICc(sst_2021_gam, sft_2021_gam, sst_only_2021_gam, sft_only_2021_gam)
 ```
 
-### Juvenile and Adult density models with CSULB sft data
+### 2019 and 2020 single-year models and compare to 2021
+```{r}
+gam_dat_2019 <- daily_3yr_dat %>%
+  mutate(year = as.factor(as.character(year))) %>%
+  filter(year == 2019) %>%
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
+  mutate(yday = yday(mdy))
+
+lb_gam_2019 <- mgcv::gam(total_unique ~ s(hour, k = 10) +
+                         s(yday, k = 10) +
+                         beaufort +
+                         vis +
+                         s(tide, k = 10) +
+                         s(sft, k = 10) +
+                         s(WVHT, k = 10) +
+                         s(chl_interp) +
+                         offset(total_area),
+                       data = gam_dat_2019, 
+                       method = "REML", family = nb, select = TRUE)
+
+gam_dat_2020 <- daily_3yr_dat %>%
+  mutate(year = as.factor(as.character(year))) %>%
+  filter(year == 2020) %>%
+  mutate(hour = as.numeric(hour(date_hour))) %>%
+  mutate(beaufort = as.factor(beaufort)) %>% 
+  mutate(vis = as.factor(vis)) %>% 
+  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
+  mutate(yday = yday(mdy))
+
+lb_gam_2020 <- mgcv::gam(total_unique ~ s(hour, k = 10) +
+                         s(yday, k = 10) +
+                         beaufort +
+                         vis +
+                         s(tide, k = 10) +
+                         s(sft, k = 10) +
+                         s(WVHT, k = 10) +
+                         s(chl_interp) +
+                         offset(total_area),
+                       data = gam_dat_2020, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(lb_gam_2019)
+#tide, sft, waveheight penalized to zero
+#DE = 90.4(!), n = 77
+
+summary(lb_gam_2020)
+#hour penalized to zero
+#DE = 48.3, n = 95
+
+summary(sft_2021_gam)
+#wave height penalized to zero
+#DE = 45.1, n = 120
+
+anova(lb_gam_2019)
+#HOUR, DAY, and ChlA are significant in 2019
+
+anova(lb_gam_2020)
+#DAY, TIDE, TEMP, and WAVE HEIGHT are significant in 2020
+
+anova(sft_2021_gam)
+#VIS, HOUR, DAY and TIDE are significant in 2021
+```
+
+### Juvenile and Adult density models with CSULB sft data (all years)
 ```{r}
 lb_juv_gam <- mgcv::gam(juvenile ~ year +
                                       s(hour, k = 10, by = year) +
@@ -2845,7 +2911,145 @@ anova(lb_adult_gam)
 #no envt'l or detection variables significant
 ```
 
-### Juvenile and adult density with 2021 sst
+### Juvenile and Adult density, 2019
+```{r}
+juv_gam_2019 <- mgcv::gam(juvenile ~  s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2019, 
+                       method = "REML", family = nb, select = TRUE)
+
+adult_gam_2019 <- mgcv::gam(adult ~   s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2019, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(juv_gam_2019)
+#DE = 81.7%, n = 77
+#tide, sft, waveheight, and salinity penalized to zero
+
+
+summary(adult_gam_2019)
+#DE = 78.6, n = 77
+#day, tide, sft, and waveheight penalized to zero
+
+anova(juv_gam_2019)
+#DAY and CHL significant in 2019 for juveniles
+
+anova(adult_gam_2019)
+#HOUR and CHL significant in 2019 for adults
+```
+
+### Juvenile and Adult density, 2020
+```{r}
+juv_gam_2020 <- mgcv::gam(juvenile ~  s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2020, 
+                       method = "REML", family = nb, select = TRUE)
+
+adult_gam_2020 <- mgcv::gam(adult ~   s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2020, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(juv_gam_2020)
+#DE = 27%, n = 95
+#hour and salinity penalized to zero
+
+summary(adult_gam_2020)
+#DE = 27.9%
+#hour, day, tide, sft, and salinity penalized to zero
+
+anova(juv_gam_2020)
+#DAY and TEMP significant for juveniles in 2020
+
+anova(adult_gam_2020)
+#Wave height significant for adults in 2020
+
+```
+
+### Juvenile and Adult density, 2021
+```{r}
+juv_gam_2021 <- mgcv::gam(juvenile ~  s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2021, 
+                       method = "REML", family = nb, select = TRUE)
+
+adult_gam_2021 <- mgcv::gam(adult ~   s(hour, k = 10) +
+                                      s(yday, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(salinity, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_2021, 
+                       method = "REML", family = nb, select = TRUE)
+
+summary(juv_gam_2021)
+#DE = 13.2%, n = 108
+#tide, temp, salinity, and chl penalized to zero
+
+summary(adult_gam_2021)
+#DE = 21.7%
+
+anova(juv_gam_2021)
+#HOUR significant for juveniles in 2021
+
+anova(adult_gam_2021)
+#tide and sft significant for adults in 2021
+
+```
+
+
+### Juvenile and Adult density, 2021
+```{r}
+
+
+```
+
+### Juvenile and adult density with 2021 SST
 ```{r}
 lb_juv_gam_sst <- mgcv::gam(juvenile ~
                                       s(hour, k = 10) +
