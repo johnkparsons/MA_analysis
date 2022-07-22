@@ -457,3 +457,10 @@ carp <- get_map(location = location, source = "osm", zoom = 8)
 ggmap(carp)
 ```
 
+ASL
+```{r}
+asl1 <- read_csv("data_raw/transect_csvs_2021_non_v2/Aug-12th-2021-09-21AM-Flight-Airdata.csv")
+View(asl1)
+
+
+```
