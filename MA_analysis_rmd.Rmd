@@ -9,8 +9,8 @@ editor_options:
 
 # Setup
 ```{r, eval=FALSE}
-#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", "plyr", "broom.mixed", "ggthemes", "padr", "ptest", "maps", "mapdata", "hexbin", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr"))
-#install.packages("ggthemes")
+#install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", "plyr", "broom.mixed", "ggthemes", "padr", "ptest", "maps", "mapdata", "hexbin", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr", "FSA"))
+install.packages("fifer")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -50,6 +50,8 @@ library(mgcv) #GAMs
 library(visreg) #visualizing GAMs
 library(itsadug)
 library(installr)
+library(FSA)
+library(fifer)
 #webshot::install_phantomjs() 
 #citation("ptest")
 
@@ -604,15 +606,10 @@ size_dat_3yr <- size_dat_3yr %>%
 (1 row = 1 shark, daily data is repeated for days where multiple sharks were observed)
 ```{r}
 size_dat_unique <- size_dat_3yr %>%
-                    filter(unique == "Y")
+                    filter(unique == "Y") %>% 
+                    mutate(date = sub("^0+", "", date))
 
-nrow(size_dat_unique)
-#919 sightings across 3 years
-
-size_dat_unique$date <- as.character(size_dat_unique$date)
 joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
-
-#View(joined_3yr)
 ```
 
 ## Adding size classes and inner/outer/manual to daily 3yr dataframe
@@ -620,21 +617,16 @@ joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
 ggplot(joined_3yr, aes(x = video_YN)) +
   geom_bar()
 
-#View(joined_3yr)
-
 size_classed_3yr <- joined_3yr %>%
   group_by(date) %>%
-  dplyr::summarize(juvenile = sum(length_adj_m < 3 & length_adj_m > 0, na.rm = TRUE), 
-                   adult = sum(length_adj_m >= 3, na.rm = TRUE),
+  dplyr::summarize(juvenile = sum(length_adj_m < 3.00 & length_adj_m > 0, na.rm = TRUE), 
+                   adult = sum(length_adj_m >= 3.00, na.rm = TRUE),
                    inner_count = sum(video_YN == "inner", na.rm = TRUE),
                    outer_count = sum(video_YN == "outer", na.rm = TRUE) + 
                                  sum(video_YN == "outer ", na.rm = TRUE),
                    manual_count = sum(video_YN == "manual", na.rm = TRUE) +
                                   sum(video_YN == "manual_1", na.rm = TRUE) +
                                   sum(video_YN == "manual_2", na.rm = TRUE))
-
-#ggplot(data = size_classed_3yr, aes(x = adult)) +
-  #geom_bar()
 
 daily_3yr_dat <- left_join(daily_3yr_dat, size_classed_3yr, by = "date")
 #View(daily_3yr_dat)
@@ -959,9 +951,25 @@ summary(year_aov)
 TukeyHSD(year_aov)
 
 ggplot(daily_3yr_dat, aes(x = total_unique)) +
-  geom_histogram() +
+  geom_density() +
   facet_wrap(vars(year))
-#obviously not normally distributed so idk about anova for year
+#obviously not normally distributed so idk about anova for year...
+
+kruskal_dat <- daily_3yr_dat %>% 
+  mutate(year = as_factor(year))
+kruskal.test(total_unique~year, data = kruskal_dat)
+#significant difference in total counts between years (p < 0.001)
+
+dunnTest(total_unique~year, data = kruskal_dat)
+#all year contrasts significant
+
+sum(daily_3yr_dat$adult)
+#173 adults
+
+sum(daily_3yr_dat$juvenile)
+#330 juveniles
+
+View(size_dat_3yr)
 
 daily_3yr_dat %>%
   filter(year == 2019) %>% 
@@ -1003,7 +1011,21 @@ daily_3yr_dat %>%
 #116 detection days in 2021
 116/140
 
-chisq.test(daily_3yr_dat$year, daily_3yr_dat$detection)
+detection_table <- table(daily_3yr_dat$year, daily_3yr_dat$detection)
+chisq.test(detection_table)
+
+#post-hoc w/ Bonferroni Adjustment - 3 comparisons so alpha = 0.05/3 = 0.0167
+
+#2019-2020
+chisq.test(detection_table[c(1,2),])
+#different
+
+#2019-2021
+chisq.test(detection_table[c(1,3),])
+#different
+
+#2020-2021
+chisq.test(detection_table[c(2,3),])
 
 daily_3yr_dat %>% 
   filter(year == 2019) %>% 
@@ -1432,37 +1454,6 @@ daily_3yr_dat %>%
 ggsave("plots/dens_years_overlaid.png", width = 7, height = 4)
 ```
 
-### Comparing survey windows
-```{r}
-nrow(dat_2019)
-first(dat_2019$date)
-last(dat_2019$date)
-#107 survey days in 2019 from May 30 to November 22
-
-nrow(dat_2020)
-first(dat_2020$date)
-last(dat_2020$date)
-#135 survey days in 2020 from May 20 to December 11
-
-nrow(dat_2021)
-first(dat_2021$date)
-last(dat_2021$date)
-#142 survey days in 2021 from April 20 to December 18
-```
-* I definitely *could* do analyses with only the overlapping window but since day is included I think it makes more sense to keep all of the data that I have
-
-### Do manual counts vary across the field season?
-```{r}
-#adding day to the year model:
-daily_3yr_narm_manual <- daily_3yr_dat %>% 
-  filter(!is.na(manual_unique))
-season_glm_man <- glmmTMB(manual_unique ~ year*day, family = nbinom1, data = daily_3yr_narm_manual, na.action = "na.fail")
-summary(season_glm_man)
-
-dredge(season_glm_man)
-# day + year, day*year, and day-only are all equally weighted for manual count model
-```
-
 ## Size 
 
 ### first off, a justification of ASL and Depth corrections:
@@ -1572,6 +1563,46 @@ surf_dat_20 %>%
 ```
 * I have SE, margin of error, confidence intervals, and average error - not sure which of these metrics is best to report
 
+### Overestimates at 40, 50, 60 m
+```{r}
+sub_dat_40 <- BOI_1_sub_dat %>%
+  filter(method == "video") %>% 
+  filter(test_alt == "40")
+
+n <- length(sub_dat_40$size_asl_plus_depth)
+mean_size_40 <- mean(sub_dat_40$size_asl_plus_depth)
+std_err <- sd(sub_dat_40$size_asl_plus_depth)/sqrt(n)
+crit_val <- qt(0.975, df=(n-1))
+margin_of_error <- std_err * crit_val
+margin_of_error
+
+mean_size_40
+2.035 - 1.97
+
+sub_dat_40 %>% 
+  mutate(error = size_asl_plus_depth - known_size_pvc) %>% 
+  summarize(mean_error = mean(error))
+#mean 40 m overestimate was 6.5 cm, 1 pixel = 1.9 cm
+
+sub_dat_50 <- BOI_1_sub_dat %>%
+  filter(method == "video") %>% 
+  filter(test_alt == "50")
+
+sub_dat_50 %>% 
+  mutate(error = size_asl_plus_depth - known_size_pvc) %>% 
+  summarize(mean_error = mean(error))
+#mean 50 m overestimate was 8.2 cm
+
+sub_dat_60 <- BOI_1_sub_dat %>%
+  filter(method == "video") %>% 
+  filter(test_alt == "60")
+
+sub_dat_60 %>% 
+  mutate(error = size_asl_plus_depth - known_size_pvc) %>% 
+  summarize(mean_error = mean(error))
+#mean 60 m overestimate was 9.5 cm
+```
+
 ### average size of each depth category
 ```{r}
 size_dat_3yr %>%
@@ -1584,14 +1615,14 @@ size_dat_3yr %>%
 
 #significant difference?
 
-depth_aov_dat <- size_dat_2021 %>% 
+depth_aov_dat <- size_dat_3yr %>% 
                   filter(unique == "Y") %>%
                   filter(!is.na(length_adj)) %>% 
                   filter(length_adj > 1) %>% 
                   filter(depth..JP. == "surface" | depth..JP. == "shallow" | depth..JP. == "deep")
 
 shapiro.test(log(depth_aov_dat$length_adj))
-#def not normal but log fixes it
+#normal when log-transformed
 
 depth_aov <- aov(log(length_adj) ~ depth..JP., data = depth_aov_dat)
 
@@ -1600,7 +1631,7 @@ plot(depth_aov)
 
 TukeyHSD(depth_aov)
 ```
-*mean sizes not significantly different between depth categories
+*mean logged sizes not significantly different between depth categories
 
 ### histograms of each depth category
 ```{r}
@@ -1831,6 +1862,65 @@ daily_3yr_dat %>%
   ggplot(aes(x = juvenile/total_sized, color = as_factor(year))) +
     geom_density(size = 1.1, adjust = 0.5)
 ggsave("plots/yearly_juv_prop_density.png")
+```
+
+### Change in size classes across years
+```{r}
+daily_3yr_dat %>% 
+  mutate(juv_prop = juvenile/total_sized) %>% 
+  group_by(as_factor(year)) %>% 
+  summarize(mean = mean(juv_prop, na.rm = TRUE))
+
+prop_dat <- daily_3yr_dat %>% 
+  mutate(juv_prop = juvenile/total_sized) %>% 
+  mutate(year_fac = as_factor(year))
+
+prop_dat %>% 
+  ggplot(aes(x = juv_prop)) +
+    geom_density()
+
+size_chi_dat <- joined_3yr %>% 
+  mutate(year_fac = as_factor(year(parse_date_time(date, order = "%m/%d/%y")))) %>% 
+  filter(unique == "Y") %>% 
+  filter(length_adj_m > 1) %>% 
+  mutate(size_class = ifelse(length_adj_m < 3.000, "juvenile", "adult"))
+
+size_chi_table <- table(size_chi_dat$year_fac, size_chi_dat$size_class)
+size_chi_table
+15 + 48 + 112 + 32 + 141 + 168
+#516 sized sharks
+
+size_chi_table_2 <- size_classed_3yr %>% 
+  mutate(year_fac = lubridate::year(parse_date_time(date, order = "%m/%d/%y"))) %>% 
+  group_by(year_fac) %>% 
+  summarize(juvenile = sum(juvenile), adult = sum(adult))
+#just a check, same as above
+
+chisq.test(size_chi_table)
+#sig. diff. between size distribution p < 0.005
+
+size_chi_table[1,2]/(size_chi_table[1,1] + size_chi_table[1,2])
+#68.1 % juvenile in 2019
+
+size_chi_table[2,2]/(size_chi_table[2,1] + size_chi_table[2,2])
+#74.6% juvenile in 2020
+
+size_chi_table[3,2]/(size_chi_table[3,1] + size_chi_table[3,2])
+#60.0% juvenile in 2021
+
+#post-hoc w/ Bonferroni Adjustment - 3 comparisons so alpha = 0.05/3 = 0.0167
+
+#2019-2020
+chisq.test(size_chi_table[c(1,2),])
+#not different
+
+#2019-2021
+chisq.test(size_chi_table[c(1,3),])
+#not different
+
+#2020-2021
+chisq.test(size_chi_table[c(2,3),])
+#different
 ```
 
 ## Modelling effects of environmental and detection-related variables on transect density
@@ -6064,7 +6154,7 @@ size_dat_unique %>%
   ggplot(aes(x = length_adj_m, fill = year)) +
     geom_histogram() +
     facet_grid(rows = vars(year)) +
-    theme_clean() +
+    theme_cowplot() +
     labs(y = "Count", x = "Length (m)", fill = "Year") +
     theme(strip.text.y = element_blank()) +
     scale_fill_brewer(palette = "Dark2")
