@@ -10,7 +10,7 @@ editor_options:
 # Setup
 ```{r, eval=FALSE}
 #install.packages(c("tidyverse", "dplyr", "lme4", "glmmTMB", "effects", "DHARMa", "MuMIn", "plyr", "broom.mixed", "ggthemes", "padr", "ptest", "maps", "mapdata", "hexbin", "car", "lubridate", "slider", "hms", "olsrr", "bbmle", "emmeans", "gt", "webshot", "cowplot", "jtools", "ggstance", "AER", "mgcv", "itsadug", "installr", "FSA"))
-#install.packages("multcomp")
+#install.packages("hexbin")
 library(tidyverse)
 slice <- dplyr::slice
 #library(plyr); library(dplyr)
@@ -529,7 +529,7 @@ size_dat_2021 %>%
   nrow()
 #337 juveniles
 ```
-MUCH higher % of adults than 2020 - close to 50-50
+higher % of adults than 2020
 
 ## Three-Year ("3yr") dataset tidying
 
@@ -607,7 +607,8 @@ size_dat_3yr <- size_dat_3yr %>%
 (1 row = 1 shark, daily data is repeated for days where multiple sharks were observed)
 ```{r}
 size_dat_unique <- size_dat_3yr %>%
-                    filter(unique == "Y") %>% 
+                    filter(unique == "Y") %>%
+                    filter(length_adj_m > 1) %>% 
                     mutate(date = sub("^0+", "", date))
 
 joined_3yr <- left_join(daily_3yr_dat, size_dat_unique, by = "date")
@@ -1051,7 +1052,7 @@ daily_3yr_dat %>%
 
 ### SST satellite and LTER temp historical trends
 ```{r}
-sat_sst <- read.csv("data_raw/sat_sst.csv")
+sat_sst_raw <- read.csv("data_raw/sat_sst.csv")
 View(sat_sst)
 
 sat_sst %>% 
@@ -1114,6 +1115,14 @@ lter_2012_2021_avg <- lter_dat_raw %>%
   ungroup() %>% 
   summarize(Temp_top = mean(Temp_top))
 #16.042
+
+sat_sst <- sat_sst_raw %>%
+  slice(-c(1)) %>% 
+  mutate(date_hour = as_datetime(time)) %>% 
+  mutate(date_hour = round_date(date_hour, "hour"))
+View(sat_sst)
+sat_vs_lb_sst <- left_join(sat_sst, sft_sst_20_21, by = "date_hour")
+View(sat_vs_lb_sst)
 ```
 
 ## Investigating different metrics - raw count (each method and "unique") and density
@@ -1968,6 +1977,7 @@ daily_3yr_dat %>%
   mutate(juv_prop = juvenile/total_sized) %>% 
   group_by(as_factor(year)) %>% 
   summarize(mean = mean(juv_prop, na.rm = TRUE))
+#NOT using this in the thesis
 
 prop_dat <- daily_3yr_dat %>% 
   mutate(juv_prop = juvenile/total_sized) %>% 
@@ -1977,6 +1987,8 @@ prop_dat %>%
   ggplot(aes(x = juv_prop)) +
     geom_density()
 
+median(round(size_dat_3yr$length_adj_m, digits = 1), na.rm = TRUE)
+
 size_chi_dat <- joined_3yr %>% 
   mutate(year_fac = as_factor(year(parse_date_time(date, order = "%m/%d/%y")))) %>% 
   filter(unique == "Y") %>% 
@@ -1985,8 +1997,12 @@ size_chi_dat <- joined_3yr %>%
 
 size_chi_table <- table(size_chi_dat$year_fac, size_chi_dat$size_class)
 size_chi_table
-15 + 48 + 112 + 32 + 141 + 168
+14 + 48 + 112 + 33 + 141 + 168
 #516 sized sharks
+#174 adults
+#342 juveniles
+342/516
+#66.3% juveniles
 
 size_chi_table_2 <- size_classed_3yr %>% 
   mutate(year_fac = lubridate::year(parse_date_time(date, order = "%m/%d/%y"))) %>% 
@@ -1998,7 +2014,7 @@ chisq.test(size_chi_table)
 #sig. diff. between size distribution p < 0.005
 
 size_chi_table[1,2]/(size_chi_table[1,1] + size_chi_table[1,2])
-#68.1 % juvenile in 2019
+#70.2 % juvenile in 2019
 
 size_chi_table[2,2]/(size_chi_table[2,1] + size_chi_table[2,2])
 #74.6% juvenile in 2020
@@ -2236,6 +2252,8 @@ mgcv::concurvity(glob_gam,full=FALSE)
 
 mgcv::concurvity(lbgam_tot_full, full = FALSE)
 #sft and hour 2019 is only combo with worst > 0.8
+
+mgcv::concurvity(lb_gam_2021, full = FALSE)
 ```
 
 ### Trends with detectability variables
@@ -2289,149 +2307,6 @@ ggplot(gam_dat, aes(x = WVHT, y = transect_total)) +
 ```
 *not much going on with either of these
 
-### "Local" month model with year interaction only for hour and month (no N and S temps) - CARP LTER SFT DATA
-```{r}
-gam4 <- mgcv::gam(transect_total ~ year +
-                                   s(hour, by = year) +
-                                   s(month, by = year) +
-                                   beaufort +
-                                   vis +
-                                   s(tide) +
-                                   s(Temp_top) +
-                                   s(WVHT) +
-                                   offset(transect_area_km2),
-                  data = gam_dat2, method = "REML",
-                  family = nb, select = TRUE)
-#select = TRUE does automated term penalization to remove terms that are "infinitely smooth"
-
-summary(gam4)
-#55.6% of deviance explained
-
-gam.check(gam4, rep = 500)
-#month and wvht p < 0.05, but edf much lower than k'
-
-anova.gam(gam4)
-#p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
-#year, beaufort, vis all (marginally) significant parametric terms (see post-hoc tests below)
-#month (all years) and hour (2020 and 2021) significant.
-#tide, temp, and WVHT n.s.
-
-visreg(gam4)
-plot(gam4)
-
-gam4_dredge_drop1 <- dredge(gam4, m.min = 8, fixed = "offset(transect_area_km2)")
-gam4_dredge_drop1
-#dropping tide, vis, waveheight, and temp all (marginally) improves fit over global model
-#dropping beaufort, hour, month, and year all significantly worsen fit compared to global model
-
-#gam4_full_dredge <- dredge(gam4, m.min = 3, fixed = "offset(transect_area_km2)")
-gam4_full_dredge
-
-#gam4_top3_dredge <- dredge(gam4, m.max = 4, fixed = "offset(transect_area_km2)")
-gam4_top3_dredge
-
-visreg(gam4)
-visreg4_data <- visreg(gam4)
-
-fits4 <- as.data.frame(visreg4_data[[3]][["fit"]][["visregFit"]])
-days4 <- as.data.frame(visreg4_data[[3]][["fit"]][["month"]])
-
-gam4_day_fits <- bind_cols(fits4, days4)
-#main peak is July, secondary peak in May, and minimum is September/October
-
-gam4_year_emms <- emmeans(gam4, "year")
-pwpm(gam4_year_emms, type = "response")
-#2019 lower than 2020 and 2021, but 2020 and 2021 not sig. diff:
-
-ggplot(data = gam_dat, aes(x = year, y = transect_total/transect_area_km2)) +
-  geom_boxplot()
-
-gam4_beaufort_emms <- emmeans(gam4, "beaufort")
-pwpm(gam4_beaufort_emms, type = "response")
-# no sig. contrasts
-
-gam4_vis_emms <- emmeans(gam4, "vis")
-pwpm(gam4_vis_emms, type = "response")
-#2 marginally lower than 4 (p = 0.080)
-```
-
-### "Local" month model with year interaction only for hour and month (no N and S temps) - CSULB SFT DATA
-```{r}
-gam4lb <- mgcv::gam(transect_total ~ year +
-                                   s(hour, k = 10, by = year) +
-                                   s(month, k = 8, by = year) +
-                                   beaufort +
-                                   vis +
-                                   s(tide, k = 10) +
-                                   s(sft, k = 10) +
-                                   s(WVHT, k = 50) +
-                                   s(chl) +
-                                   offset(transect_area_km2),
-                  data = gam_dat_lb_full, method = "REML", family = nb, select = TRUE)
-#select = TRUE does automated term penalization to remove terms that are "infinitely smooth"
-#REML for (relatively) small dataset
-
-summary(gam4lb)
-#59.6% of deviance explained
-#n = 247
-
-gam.check(gam4lb, rep = 500)
-#issue with month. wvht is p < 0.05 but edf <<< k
-
-anova.gam(gam4lb)
-#p-values for smooth terms show that the nonlinear effect of the term is different from zero (a flat horizontal line)
-#year, beaufort, and vis are all significant as parametric terms (see post-hoc tests below)
-#sft, month (all years) and hour (2020 and 2021) significant.
-#tide, WVHT, salinity n.s.
-
-visreg(gam4lb)
-
-plot(gam4lb)
-
-gam4lb_dredge_drop1 <- dredge(gam4lb, m.min = 9, fixed = "offset(transect_area_km2)")
-gam4lb_dredge_drop1
-# models w/out salinity, tide, and waveheight are as good as global model
-
-#gam4lb_full_dredge <- dredge(gam4lb, m.min = 4, fixed = "offset(transect_area_km2)")
-gam4lb_full_dredge
-
-#gam4lb_top3_dredge <- dredge(gam4lb, m.max = 4, fixed = "offset(transect_area_km2)")
-gam4lb_top3_dredge
-
-visreg(gam4lb)
-visreg4lb_data <- visreg(gam4lb)
-
-fits4lb <- as.data.frame(visreg4lb_data[[3]][["fit"]][["visregFit"]])
-days4lb <- as.data.frame(visreg4lb_data[[3]][["fit"]][["month"]])
-
-gam4lb_day_fits <- bind_cols(fits4lb, days4lb)
-View(gam4lb_day_fits)
-#main peak is July, secondary peaks (local maxima) in May and November, and minimum is September/October
-
-#post-hoc tests of significant parametric terms yar, beaufort, and vis:
-
-gam4lb_year_emms <- emmeans(gam4lb, "year")
-pwpm(gam4lb_year_emms, type = "response")
-#2019 lower than 2020 and 2021, but 2020 and 2021 not sig. diff:
-
-ggplot(data = gam_dat_lb, aes(x = year, y = transect_total/transect_area_km2)) +
-  geom_boxplot()
-
-gam4lb_beaufort_emms <- emmeans(gam4lb, "beaufort")
-pwpm(gam4lb_beaufort_emms, type = "response")
-# no sig. contrasts
-
-gam4lb_vis_emms <- emmeans(gam4lb, "vis")
-pwpm(gam4lb_vis_emms, type = "response")
-#2 marginally lower than 3 (p = 0.0555), lower than 4 (p < 0.01), marginally lower than 5 (p < 0.0661)
-```
-
-### Comparing gam4 models (LTER vs CSULB)
-```{r}
-AICc(gam4, gam4lb)
-#lb data significantly lower AICc (delta = 52 where a delta of 2 is considered threshold)
-```
-
 ### Total count w/CSULB data
 ```{r}
 gam_dat_lb_tot <- daily_3yr_dat %>%
@@ -2468,124 +2343,643 @@ lbgam_tot <- mgcv::gam(total_unique ~ year +
                        na.action = "na.fail")
 ```
 
-### Working version as of 7/6: day instead of month, CSULB or LTER sft data, total count
+### THESIS VERSION ALL SHARKS 
 ```{r}
-gam_dat_lb_tot_full <- daily_3yr_dat %>%
+gam_dat_lb <- daily_3yr_dat %>%
   mutate(year = as.factor(as.character(year))) %>%
   mutate(hour = as.numeric(hour(date_hour))) %>%
-  mutate(beaufort = as.factor(beaufort)) %>% 
-  mutate(vis = as.factor(vis)) %>% 
-  mutate(presence = ifelse(total_unique > 0, 1, 0)) %>% 
-  mutate(month = month(mdy)) %>%
   mutate(yday = yday(mdy)) %>% 
-  mutate(month_fac = as.factor(month))
-View(gam_dat_lb_tot_full)
+  filter(transect_area_km2 > 0.17) %>%
+  mutate(beaufort = ifelse(beaufort > 1, "2+", beaufort)) %>%
+  mutate(beaufort = ifelse(beaufort < 2, "0-1", beaufort)) %>%
+  mutate(vis = ifelse(vis == 1 | vis == 2, "low",
+                      ifelse(vis == 4 | vis == 5, "high", "med"))) %>%
+  mutate(beaufort = factor(beaufort, levels = c("0-1", "2+"))) %>% 
+  mutate(vis = factor(vis, levels = c("low", "med", "high"))) %>% 
+  filter(!is.na(year) & !is.na(hour) & !is.na(yday) &
+         !is.na(beaufort) &
+         !is.na(vis) &
+        !is.na(tide) &
+          !is.na(sft) &
+          !is.na(WVHT) & 
+          !is.na(chl_interp))
 
-lbgam_tot_full <- mgcv::gam(total_unique ~ year +
-                                      s(hour, k = 10, by = year) +
+lbgam_all_pois <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, 
+                       method = "REML", select = TRUE)
+sum(residuals(lbgam_all_pois, type = "pearson")^2) / df.residual(lbgam_all_pois)
+#overdispersed, so using negative binomial
+
+lbgam_all <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+
+summary(lbgam_all)
+#DE = 53, n = 272
+
+gam.check(lbgam_all)
+#no issues
+
+anova(lbgam_all)
+#year, day, and hour all significant
+#vis significant, beaufort not
+#tide and sft significant, waveheight and chl_interp not
+
+visreg(lbgam_all, scale="response", cond=list(total_area=1))
+
+lbgam_all_no_year <- mgcv::gam(total_unique ~ s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_year)
+53-39.3
+#year DE = 13.7
+
+lbgam_all_no_hour <- mgcv::gam(total_unique ~ year +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_hour)
+53 - 50
+#hour DE = 3.0%
+
+lbgam_all_no_day <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_day)
+53 - 39.5
+#day DE = 13.5
+
+lbgam_all_no_sft <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_sft)
+53-50.4
+#SFT DE = 2.6%
+
+lbgam_all_no_chl <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_chl)
+53 - 52.4
+#chl DE = 0.6%
+
+lbgam_all_no_tide <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_tide)
+53 - 52
+#tide DE = 1%
+
+lbgam_all_no_wvht <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_wvht)
+53 - 52.9
+#wvht DE = 0.1%
+
+lbgam_all_no_beau <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_beau)
+53-52.4
+#beaufort = 0.6%
+
+lbgam_all_no_vis <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(total_area),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_no_vis)
+53 - 50.1
+#vis DE = 2.9%
+
+### Post-hoc of year
+names(coef(lbgam_all))
+year_contrast_all <- glht(lbgam_all, linfct = c("year2020 = 0", "year2021 = 0", "year2021 - year2020 = 0"))
+summary(year_contrast_all)
+
+ggplot(gam_dat_lb, aes(x = year, y = total_unique)) +
+  geom_bar(stat = "summary", fun = "mean")
+#increase in average count by ~2 sharks each year
+
+ggplot(gam_dat_lb, aes(x = year, y = total_unique/total_area)) +
+  geom_bar(stat = "summary", fun = "mean")
+
+### Post-hoc of vis
+names(coef(lbgam_all))
+vis_contrast_all <- glht(lbgam_all, linfct = c("vismed = 0", "vishigh = 0", "vishigh - vismed = 0"))
+summary(vis_contrast_all)
+visreg(lbgam_all, "vis")
+```
+
+### THESIS VERSION JUVENILES 
+```{r}
+lbgam_juv <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv)
+#DE = 28.5, n = 264
+
+gam.check(lbgam_juv)
+#issue with sft, will look at residuals and sensitivity
+visreg(lbgam_juv)
+
+anova(lbgam_juv)
+#year and day significant
+#hour marginal
+#vis significant, beaufort not
+#sft significant, tide, waveheight and chl_interp not
+
+lbgam_juv_no_year <- mgcv::gam(juvenile ~ s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_year)
+28.5-22.6
+#year DE = 5.9
+
+lbgam_juv_no_hour <- mgcv::gam(juvenile ~ year +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_hour)
+28.5 - 27.4
+#hour DE = 1%
+
+lbgam_juv_no_day <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_day)
+28.5 - 13.7
+#day DE = 14.8
+
+lbgam_juv_no_sft <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_sft)
+28.5 - 26.4
+#SFT DE = 2.1
+
+lbgam_juv_no_chl <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_chl)
+28.5 - 28.5
+#chl DE = 0.0%
+
+lbgam_juv_no_tide <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_tide)
+28.5 - 28
+#tide DE = 0.5%
+
+lbgam_juv_no_wvht <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_wvht)
+28.5 - 28.5
+#wvht DE = 0.0%
+
+lbgam_juv_no_beau <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_beau)
+28.5-28.1
+#beaufort = 0.6%
+
+lbgam_juv_no_vis <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_juv_no_vis)
+28.5 - 24.5
+#vis DE = 3.8%
+
+### Post-hoc of year
+year_contrast_juv <- glht(lbgam_juv, linfct = c("year2020 = 0", "year2021 = 0", "year2021 - year2020 = 0"))
+summary(year_contrast_juv)
+
+### post-hoc of visibility
+vis_contrast_juv <- glht(lbgam_juv, linfct = c("vismed = 0", "vishigh = 0", "vishigh - vismed = 0"))
+summary(vis_contrast_juv)
+visreg(lbgam_juv, "vis")
+```
+
+### THESIS VERSION ADULTS 
+```{r}
+lbgam_adult <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult)
+#DE = 31.2, n = 264
+
+gam.check(lbgam_adult)
+#all good
+
+anova(lbgam_adult)
+#year significant, day significant in 2019 and 2021 but marginal in 2020
+#hour not significant
+#vis significant, beaufort not
+#sft, waveheight, chl and tide not 
+visreg(lbgam_adult, scale = "response", cond = list(area_20m = 1))
+
+lbgam_adult_no_year <- mgcv::gam(adult ~ s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_year)
+31.2-21.2
+#year DE = 10
+
+lbgam_adult_no_hour <- mgcv::gam(adult ~ year +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_hour)
+31.2 - 30.6
+#hour DE = 0.6%
+
+lbgam_adult_no_day <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_day)
+31.2 - 23.9
+#day DE = 7.3
+
+lbgam_adult_no_sft <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_sft)
+31.2 - 31.2
+#SFT DE = 0
+
+lbgam_adult_no_chl <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_chl)
+31.2 - 30.8
+#chl DE = 0.4%
+
+lbgam_adult_no_tide <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_tide)
+31.2 - 30.9
+#tide DE = 0.3%
+
+lbgam_adult_no_wvht <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_wvht)
+31.2 - 31.3
+#wvht DE = < 0
+
+lbgam_adult_no_beau <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_beau)
+31.2-31.4
+#beaufort = < 0
+
+lbgam_adult_no_vis <- mgcv::gam(adult ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      s(tide, k = 10) +
+                                      s(sft, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_adult_no_vis)
+31.2 - 30.2
+#vis DE = 1.0%
+
+### Post-hoc of year
+year_contrast_adult <- glht(lbgam_adult, linfct = c("year2020 = 0", "year2021 = 0", "year2021 - year2020 = 0"))
+summary(year_contrast_adult)
+
+### post-hoc of visibility
+vis_contrast_adult <- glht(lbgam_adult, linfct = c("vismed = 0", "vishigh = 0", "vishigh - vismed = 0"))
+summary(vis_contrast_adult)
+visreg(lbgam_adult, "vis")
+
+anova(lbgam_adult)
+#juv vis p < 0.05
+#all vis p < 0.001
+#adult vis p < 0.05
+
+```
+
+###Comparing directionality of effects using visreg
+```{r}
+visreg(lbgam_all, "year", scale = "response", cond = list(total_area = 1))
+visreg(lbgam_juv, "year", scale = "response", cond = list(area_20m = 1))
+visreg(lbgam_adult, "year", scale = "response", cond = list(area_20m = 1))
+
+visreg(lbgam_all, "hour", scale = "response", cond = list(total_area = 1))
+visreg(lbgam_juv, "hour", scale = "response", cond = list(area_20m = 1))
+visreg(lbgam_adult, "hour", scale = "response", cond = list(area_20m = 1))
+summary(lbgam_adult)
+
+visreg(lbgam_all, "yday", by = "year", scale = "response", cond = list(total_area = 1))
+visreg(lbgam_juv, "yday", by = "year", scale = "response", cond = list(area_20m = 1))
+visreg(lbgam_adult, "yday", by = "year", scale = "response", cond = list(area_20m = 1))
+
+visreg(lbgam_all, "tide", cond = list(total_area = 1))
+visreg(lbgam_juv, "sft", cond = list(area_20m = 1))
+visreg(lbgam_adult, "sft", scale = "response", cond = list(area_20m = 1))
+
+visreg_data <- visreg(lbgam_all)
+View(visreg_data)
+fits <- as.data.frame(visreg_data[[7]][["fit"]][["visregFit"]])
+sft <- as.data.frame(visreg_data[[7]][["fit"]][["sft"]])
+
+sft_fits_all <- bind_cols(fits, sft)
+View(sft_fits_all)
+
+visreg_data_juv <- visreg(lbgam_juv)
+View(visreg_data_juv)
+fits_juv <- as.data.frame(visreg_data_juv[[7]][["fit"]][["visregFit"]])
+sft_juv <- as.data.frame(visreg_data_juv[[7]][["fit"]][["sft"]])
+
+sft_fits_juv <- bind_cols(fits_juv, sft_juv)
+View(sft_fits_juv)
+
+ggplot(gam_dat_lb, aes(x = sft, y = juvenile/area_20m)) +
+         geom_point() +
+         geom_smooth(method = "lm")
+
+anova(lbgam_all)
+```
+
+### FOR THESIS: testing other temp sources
+```{r}
+lbgam_all_sst <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
                                       s(yday, k = 30, by = year) +
                                       beaufort +
                                       vis +
-                                      s(tide, k = 40) +
-                                      s(sft, k = 40) +
-                                      s(WVHT, k = 30) +
-                                      s(salinity, k = 10) +
+                                      s(tide, k = 10) +
+                                      s(sst, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
                                       offset(total_area),
-                       data = gam_dat_lb_tot_full, 
-                       method = "REML", family = nb, select = TRUE)
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_sst)
+anova(lbgam_all_sst)
 
-summary(lbgam_tot_full)
-#DE = 57.0%, n = 299
-visreg(lbgam_tot_full)
-
-anova(lbgam_tot_full)
-#year and vis significant parametrics
-#hour sig in 2020 and 2021, not 2019
-#day sig. in all years
-#tide and sft significant
-#wvht and salinity n.s.
-
-gam.check(lbgam_tot_full)
-#problem w/ wvht - could consider dropping
-
-mgcv::concurvity(lbgam_tot_full, full = TRUE)
-#basically everything is highly concurved w/ the "rest of the model" (indicating some variables may need to be removed)
-
-mgcv::concurvity(lbgam_tot_full, full = FALSE)
-#basically all of the envt'l variables are highly concurved w/ the temporal variables (day and hour)
-#what does it mean that day and hour are concurved within each year? 
-```
-
-### Adding interpolated chl to the above
-```{r}
-lbgam_tot_chl_pois <- mgcv::gam(total_unique ~ year +
-                                      s(hour, k = 10, by = year) +
-                                      s(yday, k = 35, by = year) +
+lbgam_all_sst_no_sst <- mgcv::gam(total_unique ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
                                       beaufort +
                                       vis +
-                                      s(tide, k = 35) +
-                                      s(sft, k = 35) +
-                                      s(WVHT, k = 25) +
-                                      s(salinity, k = 10) +
-                                      s(chl_interp, k = 30) +
+                                      s(tide, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
                                       offset(total_area),
-                       data = gam_dat_lb_tot_full, 
-                       method = "REML", select = TRUE)
-sum(residuals(lbgam_tot_chl_pois, type = "pearson")^2) / df.residual(lbgam_tot_chl_pois)
-#overdispersed, so using negative binomial
-
-lbgam_tot_chl <- mgcv::gam(total_unique ~ year +
-                                      s(hour, k = 10, by = year) +
-                                      s(yday, k = 35, by = year) +
-                                      beaufort +
-                                      vis +
-                                      s(tide, k = 35) +
-                                      s(sft, k = 35) +
-                                      s(WVHT, k = 25) +
-                                      s(salinity, k = 10) +
-                                      s(chl_interp, k = 30) +
-                                      offset(total_area),
-                       data = gam_dat_lb_tot_full, 
-                       method = "REML", family = nb, select = TRUE)
-
-summary(lbgam_tot_chl)
-#DE = 57, n = 285
-#DE of non-chl model = 57
-
-visreg(lbgam_tot_chl)
-gam.check(lbgam_tot_chl)
-#again, waveheight is only issue - could drop
-
-anova(lbgam_tot_chl)
-#year and vis significant
-#hour only significant in 2021
-#day significant in all three years
-#tide and sft significant
-#chl and waveheight penalized to zero
-#salinity not significant
-
-#adding chl removed effect of sft...
-lbgam_tot_chl_no_sft <- mgcv::gam(total_unique ~ year +
-                                      s(hour, k = 10, by = year) +
-                                      s(yday, k = 25, by = year) +
-                                      beaufort +
-                                      vis +
-                                      s(tide, k = 50) +
-                                      s(WVHT, k = 25) +
-                                      s(salinity, k = 10) +
-                                      s(chl_interp, k = 30) +
-                                      offset(total_area),
-                       data = gam_dat_lb_tot_full, 
-                       method = "REML", family = nb, select = TRUE)
-summary(lbgam_tot_chl_no_sft)
-anova(lbgam_tot_chl_no_sft)
-
-mgcv::concurvity(lbgam_tot_chl, full = F)
-mgcv::concurvity(lbgam_tot_chl_no_sft, full = T)
-mgcv::concurvity(lbgam_tot_full, full = T)
-#no-sft model has lower concurvity of envt'l terms w/rest of model
-
-mgcv::concurvity(lbgam_tot_chl_no_sft, full = F)
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_all_sst_no_sst)
 ```
 
 ### Comparing a model w/ sft as only envt'l variable to one with all other envt's variables but no sft
@@ -2639,7 +3033,7 @@ summary(lbgam_sft_chl_only)
 ```{r}
 ltergam_tot_full <- mgcv::gam(total_unique ~ year +
                                       s(hour, k = 10, by = year) +
-                                      s(day, k = 30, by = year) +
+                                      s(day, k = 10, by = year) +
                                       beaufort +
                                       vis +
                                       s(tide, k = 10) +
@@ -2650,11 +3044,12 @@ ltergam_tot_full <- mgcv::gam(total_unique ~ year +
                        method = "REML", family = nb, select = TRUE)
 
 summary(ltergam_tot_full)
-#DE = 99.6, n = 251 - should definitely use CSULB data!
+#DE = 57%, n = 234 - should definitely use CSULB data!
 anova(ltergam_tot_full)
-#year, beaufort, vis significant parametrics
-#day sig. in 2020 and marginal in 2021
-#tide and sft sig.
+#year, vis significant parametrics
+#day sig. all three years
+#hour sig. in 2020 and 2021
+#sft sig, tide marginal
 gam.check(ltergam_tot_full)
 #marginal issues with hour (month had worse issues)
 ```
@@ -5166,6 +5561,34 @@ gam_dat_lb_tot_full %>%
 ggsave("plots/hour_barplot.png", height = 5, width = 5)
 ```
 
+### vis vs time of day, chlA
+```{r}
+gam_dat_lb_tot_full %>% 
+  group_by(hour) %>% 
+  summarize(mean_vis = mean(as.numeric(vis), na.rm = TRUE)) %>% 
+  ggplot(aes(x = hour, y = mean_vis)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+ggplot(gam_dat_lb_tot_full, aes(x = hour, y = as.numeric(vis))) +
+    geom_jitter() +
+    geom_smooth()
+
+ggplot(gam_dat_2021, aes(y = chl_interp, x = vis)) +
+    geom_bar(stat = "summary", fun = "mean") +
+    geom_jitter()
+
+kruskal.test(chl_interp ~ vis, data = daily_3yr_dat)
+#no association btwn vis and chl
+
+kruskal.test(hour ~ vis, data = gam_dat_lb_tot_full)
+#no association btwn vis and hour
+
+vis_hour_table <- table(gam_dat_lb_tot_full$hour, gam_dat_lb_tot_full$vis)
+vis_hour_table
+chisq.test(vis_hour_table)
+```
+
 ### Chl-A
 ```{r}
 gam_dat_2019 %>% 
@@ -5566,185 +5989,6 @@ daily_3yr_dat %>%
     geom_smooth(method = "lm")
 ```
 
-## 2019 Time Series of Transect Data with 8 ft. cutoff
-```{r}
-dat_2019 %>% 
-  dplyr::slice(1:103) %>%
-  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>%
-  filter(transect_total != 0) %>% 
-  dplyr::select(Date, Small, Large) %>% 
-  gather("Size", "Abundance", 2:3) %>%
-  pad(interval = "day", start_val = as.Date("2019-05-30")) %>%
-  replace_na(list(Size = "DNF", Abundance = -0.1)) %>%
-  ggplot(aes(x = Date, y = Abundance)) +
-    geom_bar(aes(fill = Size), stat = "identity") +
-    scale_x_date(date_breaks = "1 month", date_labels = "%b %e",
-                 limits = c(as.Date("2019-08-15"), as.Date("2019-12-06")))+
-    scale_y_continuous(breaks = 1:7, limits = c(-0.1, 10)) +
-    scale_fill_manual(values = c("black", "red3", "dodgerblue4"), "") + theme_wsj() + 
-    theme(plot.title = element_text(size=40), legend.text = element_text(size = 16),
-          axis.text = element_text(size = 16)) +
-    labs(title = "2019 Great White Shark Abundance, 5/30 - 11/22")
-ggsave("plots/wsj_abund_plot_2019.png", width = 16, height = 9)
-```
-
-## Effort over Time, 2020
-```{r}
-dat_2020 %>% 
-  ggplot(aes(x = date, y = manual_area_km2)) +
-    geom_bar(stat = "identity")
-```
-
-## Abundance Over Time, 2020
-```{r}
-dat_2020 %>% 
-  ggplot(aes(x = date, y = total_unique)) +
-    geom_point() +
-    geom_smooth()
-
-dat_2020 %>% 
-  dplyr::rename(Date = date, Small = small_unique, Large = large_unique) %>% 
-  dplyr::select(Date, Small, Large) %>% 
-  slice(23:nrow(dat_2020)) %>%
-  gather("Size", "Abundance", 2:3) %>%
-  pad(interval = "day", start_val = as.Date("2020-06-24")) %>%
-  replace_na(list(Size = "DNF", Abundance = -0.1)) %>%
-  ggplot(aes(x = Date, y = Abundance)) + 
-    geom_bar(aes(fill = Size), stat = "identity") +
-    scale_x_date(date_breaks = "3 weeks", date_labels = "%b %e",
-                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
-    scale_y_continuous(breaks = 1:12) +
-    scale_fill_manual(values = c("black", "red3", "dodgerblue4"), "") + theme_wsj() + theme(plot.title = element_text(size = 40), legend.text = element_text(size = 16), axis.text = element_text(size = 12)) +
-    labs(title = "2020 Great White Shark Abundance, 6/24 - 12/18")
-
-ggsave("plots/wsj_abund_plot.png", width = 16, height = 9)
-
-#rolling average, right-aligned 7-day window, total transect density
-dat_2020 %>%
-  dplyr::rename(Date = date, Transects = transect_total) %>% 
-  dplyr::select(Date, Transects) %>% 
-  slice(23:nrow(dat_2020)) %>%
-  filter(!is.na(Transects)) %>%
-  ggplot(aes(x = Date, y = rollmean(Transects, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
-    geom_line(color = "red3", size = 2) +
-    scale_x_date(date_breaks = "2 weeks", date_labels = "%b %e", limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
-    scale_y_continuous(breaks = seq(from = 0, to = 2.5, by = 0.5)) +
-    theme_classic() +
-    theme(legend.text = element_text(size = 16), axis.text = element_text(size = 12)) +
-    labs(y = bquote('Individuals'%.%'km'^-2%.%'min'^-1))
-# 0.17 is survey area in km^2 and 9.6 is duration of survey in minutes
-
-ggsave("plots/2020_abund_plot.png", width = 7, height = 3)
-
-#rolling average, right-aligned 7-day window, size-classed transect density (used for GRFP, see updated version below)
-dat_2020 %>% 
-  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
-  dplyr::select(Date, Small, Large) %>% 
-  slice(23:nrow(dat_2020)) %>%
-  filter(!is.na(Small)) %>%
-  gather("Size", "Abundance", 2:3) %>%
-  ggplot(aes(x = Date, y = rollmean(Abundance, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
-    geom_line(aes(color = Size), size = 1.5) +
-    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b %y",
-                 limits = c(as.Date("2020-06-27"), as.Date("2020-10-10")))+
-    scale_y_continuous(breaks = seq(from = 0, to = 2, by = 0.25)) +
-    theme_classic() +
-    theme(legend.title = element_text(size = 14),
-          legend.text = element_text(size = 14),
-          axis.title = element_text(size = 14),
-          axis.text = element_text(size = 12),
-          plot.caption = element_text(size = 14, hjust = 0.2)) +
-    labs(y = bquote('Individuals'%.%'km'^-2%.%'min'^-1), caption = "Figure 1. Seven-day rolling mean of size-classed density of white sharks at \n              Padaro Beach aggregation zone from 6/27/2020 to 10/10/2020.") +
-    scale_color_manual(labels = c(bquote(''>='8 ft'), bquote(''< '8 ft')),values = c("red3", "dodgerblue4"))
-ggsave("plots/grfp_abund_plot_sized.png", width = 7, height = 3)
-
-#rolling average, right-aligned 7-day window, size-classed transect density (all 2020 data)
-dat_2020 %>% 
-  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
-  dplyr::select(Date, Small, Large) %>% 
-  slice(23:nrow(dat_2020)) %>%
-  filter(!is.na(Small)) %>%
-  gather("Size", "Abundance", 2:3) %>%
-  ggplot(aes(x = Date, y = rollmean(Abundance, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
-    geom_line(aes(color = Size), size = 1.5) +
-    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b %y",
-                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
-    scale_y_continuous(breaks = seq(from = 0, to = 2, by = 0.25)) +
-    theme_classic() +
-    theme(legend.title = element_text(size = 14),
-          legend.text = element_text(size = 14),
-          axis.title = element_text(size = 14),
-          axis.text = element_text(size = 12),
-          plot.caption = element_text(size = 14, hjust = 0.2)) +
-    labs(y = bquote('Individuals'%.%'km'^-2%.%'min'^-1), caption = "Figure 1. Seven-day rolling mean of size-classed density of white sharks at \n              Padaro Beach aggregation zone from 6/27/2020 to 12/11/2020.") +
-    scale_color_manual(labels = c(bquote(''>='8 ft'), bquote(''< '8 ft')),values = c("red3", "dodgerblue4"))
-
-ggsave("plots/2020_abund_plot_sized.png", width = 7, height = 3)
-
-#rolling average, right-aligned 7-day window, small sharks only
-dat_2020 %>% 
-  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
-  dplyr::select(Date, Small, Large) %>% 
-  slice(23:nrow(dat_2020)) %>%
-  filter(!is.na(Small)) %>%
-  gather("Size", "Abundance", 2:3) %>%
-  filter(Size == "Small") %>% 
-  ggplot(aes(x = Date, y = rollmean(Abundance, 7, na.pad = TRUE, align = "right")/(0.17*9.6))) + 
-    geom_line(aes(color = Size), size = 1.5) +
-    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b %y",
-                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))+
-    scale_y_continuous(breaks = seq(from = 0, to = 2, by = 0.25))
-
-#plotting time series of abundance by size, excluding days with no sharks
-dat_2020 %>% 
-  dplyr::filter(transect_total != 0) %>% 
-  dplyr::rename(Date = date, Small = transect_small, Large = transect_large) %>% 
-  dplyr::select(Date, Small, Large) %>% 
-  filter(!is.na(Small)) %>%
-  gather("Size", "Abundance", 2:3) %>%
-  ggplot(aes(x = Date, y = Abundance)) + 
-    geom_point(aes(color = Size), size = 1.5) +
-    geom_smooth(aes(color = Size), method = "lm", se = FALSE) +
-    scale_x_date(date_breaks = "4 weeks", date_labels = "%e %b",
-                 limits = c(as.Date("2020-06-27"), as.Date("2020-12-11")))
-```
-
-## Basic size class visualizations
-```{r}
-#View(size_classed_2020)
-
-sum(size_classed_2020$juvenile)
-#233 juvenile/YOY
-sum(size_classed_2020$adult)
-#29 adult/sub-adult
-
-dat_2020_final %>% 
-  gather("Sizeclass", "Abundance", juvenile:adult_density) %>% 
-  ggplot(aes(x = Sizeclass, y = Abundance)) +
-    geom_bar(stat = "identity")
-
-sum(dat_2020_final$juvenile, na.rm = TRUE)/sum(dat_2020_final$adult, na.rm = TRUE)
-# Eight times as many juveniles as adults
-
-sum(dat_2020_final$juvenile_density, na.rm = TRUE)/sum(dat_2020_final$adult_density, na.rm = TRUE)
-# Juveniles have 8.5 times the average density
-```
-
-## Size-classed time series (Abundance and Density)
-```{r}
-dat_2020_final %>% 
-  ggplot(aes(x = week(datetime.x))) +
-    geom_bar(aes(y = juvenile), stat = "identity", fill = "dodgerblue") +
-    geom_bar(aes(y = adult), stat = "identity", fill = "red4") +
-    labs(y = "Abundance", x = "Date")
-
-dat_2020_final %>% 
-  ggplot(aes(x = week(datetime.x))) +
-    geom_bar(aes(y = juvenile_density), stat = "identity", fill = "dodgerblue") +
-    geom_bar(aes(y = adult_density), stat = "identity", fill = "red4") +
-    labs(y = "Density (individuals/km2/min)", x = "Date")
-```
-
 ## Morning vs afternoon abundance
 ```{r}
 daily_3yr_dat %>%
@@ -5789,80 +6033,6 @@ daily_3yr_dat %>%
     theme_classic()
 ggsave("plots/3yr_am_vs_pm.png", width = 7, height = 5)
 ```
-
-## Channel water temperature vs manual density, 2020
-```{r}
-flights_plus_channel_dat_2020 %>%
-  #filter(manual_total_density != 0) %>% 
-  ggplot(aes(x = mean_wtemp_previous_24, y = manual_total_density)) +
-    geom_point() +
-    geom_smooth(method = "lm")
-
-wtemp_quadratic <- lm(dat_2020_full$manual_total_density ~ dat_2020_full$mean_wtemp_previous_24 + dat_2020_full$wtemp_2)
-
-summary(wtemp_quadratic)
-
-plot(dat_2020_full$mean_wtemp_previous_24, fitted(dat_2020_full$manual_total_density ~ dat_2020_full$mean_wtemp_previous_24 + dat_2020_full$wtemp_2))
-```
-
-## 2020 Tide Visualizations
-```{r}
-tide_added_2020 %>% 
-  ggplot(aes(x = tide.y)) +
-    geom_histogram()
-
-tide_added_2020 %>% 
-  ggplot(aes(x = tide.y, y = total_unique)) +
-    geom_point() +
-    geom_smooth(method = "lm")
-
-tide_added_2020 %>% 
-  ggplot(aes(x = tide.y, y = small_unique/total_unique)) +
-    geom_point() +
-    geom_smooth(method = "lm")
-#huh
-
-tide_added_2020 %>% 
-  ggplot(aes(x = small_unique/total_unique)) +
-    geom_freqpoly()
-#bimodal distribution of age structure
-
-tide_added_2020 %>% 
-  ggplot(aes(x = small_unique/total_unique)) +
-    geom_histogram(bins = 10)
-```
-
-## 2020 Size-Classed Visualizations
-```{r}
-size_dat_2020 %>% 
-  filter(unique == "Y") %>% 
-  ggplot(aes(length)) +
-    geom_histogram(binwidth = 0.2, boundary = 0, closed = "left") +
-    stat_function(fun = function(x) 
-    dnorm(x, mean = mean(size_dat_2020$length), sd = sd(size_dat_2020$length)) * 0.2 * sum(!is.na(size_dat_2020$length)))
-
-size_dat_2020 %>% 
-  filter(unique == "Y") %>% 
-  ggplot(aes(x = length_m)) +
-    geom_histogram(binwidth = 0.2, boundary = 0, closed = "left") +
-    geom_vline(xintercept = 3, size = 1.5, color = "red3", linetype = "dashed") +
-    geom_vline(xintercept = mean(size_dat_2020$length_m, na.rm = TRUE),
-               size = 1.5, color = "dodgerblue") +
-    theme_classic() +
-    scale_x_continuous(name = "Length (m)", breaks = seq(from = -1, to = 5, by = 0.5))
-ggsave("plots/2020_size_histogram.png", width = 7, height = 6)
-
-size_dat_2020 %>%
-  drop_na(unique, size_class) %>% 
-  filter(unique == "Y") %>% 
-  ggplot(aes(x = week(date), fill = size_class)) +
-    geom_bar(position = "stack", stat = "count") +
-    scale_fill_manual(values = c("red3", "dodgerblue")) +
-    scale_x_continuous(name = "Week") +
-    theme_classic()
-ggsave("plots/2020_size_classed_time_series.png", width = 7, height = 4)
-```
-
 
 ```{r}
 Mode <- function(x) {
@@ -5998,15 +6168,6 @@ size_dat_unique %>%
     theme(strip.text.y = element_blank()) +
     scale_fill_brewer(palette = "Dark2")
 ggsave("plots/size_3yrs_histo.png", height = 5, width = 5)
-```
-
-looking at one month only:
-```{r}
-size_dat_unique %>% 
-  filter(month(date) == 8) %>% 
-  ggplot(aes(x = yday(date), y = length)) +
-    geom_point() +
-    facet_grid(cols = vars(year(date)))
 ```
 
 Years overlaid:
@@ -6347,24 +6508,22 @@ dat_2020 %>%
 ### All 3 years
 ```{r}
 size_dat_3yr %>%
-  filter(video_YN == "manual" | video_YN == "manual_1") %>% 
+  filter(video_YN == "manual" | video_YN == "manual_1" | video_YN == "manual_2") %>% 
   filter(unique == "Y") %>%
   #filter(!is.na(length)) %>% 
   ggplot(aes(x = long, y = lat)) +
-    geom_point()
-    #geom_smooth()
+    geom_point() +
+    geom_smooth()
 #follows a certain distance from the coastline
 
-size_dat_3yr %>%
-  filter(video_YN == "manual" | video_YN == "manual_1") %>%
-  filter(unique == "Y") %>%
-  filter(!is.na(length_adj_m)) %>%
+size_dat_unique %>%
+  filter(video_YN == "manual" | video_YN == "manual_1" | video_YN == "manual_2") %>%
   ggplot(aes(x = long, y = lat)) +
-    geom_hex(bins = 12) +
+    geom_hex(bins = 15) +
     scale_fill_distiller(palette = "YlOrRd", direction = 1) +
     theme_classic() +
-    geom_point(aes(x = -119.56, y = 34.405), alpha = 0.5)
-ggsave("plots/heatmap_3yrs.png", width = 10)
+    geom_point(aes(x = -119.56, y = 34.405), color = "darkblue", alpha = 0.2)
+ggsave("plots/heatmap_3yrs.png", width = 6, height = 4)
 
 size_dat_3yr %>%
   filter(video_YN == "inner" | video_YN == "outer") %>%
