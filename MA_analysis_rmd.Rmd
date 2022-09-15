@@ -692,17 +692,26 @@ sft_19 <- sft_19 %>%
 
 #filtered temp data for 2020 and 2021:
 filtered_temp_20_21_raw <- read.csv("data_raw/CSULB/All_2020-2021_filtered_temp_data.csv")
-#View(filtered_temp_20_21_raw)
+View(filtered_temp_20_21_raw)
+
+filtered_temp_20_21_raw %>% 
+  filter(Source != "AUV") %>% 
+  View()
 
 station_filtered_20_21 <- filtered_temp_20_21_raw %>% 
   filter(Station == "JWS_SantaClaus_OS1" | Station == "JWS_SantaClaus_OS2" | 
          Station == "JWS_Padaro_Inshore_A" | Station == "JWS_Padaro_Inshore_B" |
-         Station == "JWS_Padaro_Inshore_C" | Station == "JWS_Padaro_Inshore_D") %>% 
+         Station == "JWS_Padaro_Inshore_C" | Station == "JWS_Padaro_Inshore_D" | Station == "JWS_Padaro_Buoy") %>% 
   mutate(depth_level = if_else(LoggerDepth_m > 1, "sft", "sst")) %>% 
   select(!c(3:5)) %>% 
   mutate(DateTimeUTC = as_datetime(DateTimeUTC))
 
-#View(station_filtered_20_21)
+View(station_filtered_20_21)
+
+station_filtered_20_21 %>% 
+  group_by(year(DateTimeUTC), Station, depth_level) %>% 
+  summarize(rows = n()) %>% 
+  View()
 
 sst_20_21 <- station_filtered_20_21 %>% 
   filter(depth_level == "sst") %>% 
@@ -742,13 +751,6 @@ ggplot(sst_20_21, aes(x = date_hour, y = sst)) +
 ggplot(sft_sst_20_21, aes(x = sst, y = sft)) + 
   geom_point() +
   geom_abline(slope = 1, intercept = 0, size = 1, color = "blue")
-
-sft_sst_lm <- lm(sft ~ sst, data = sft_sst_20_21)
-summary(sft_sst_lm)
-#r-squared = 0.75, but for any given sft, sst can vary by ~4 degrees C
-
-cor.test(sft_sst_20_21$sft, sft_sst_20_21$sst, method = "pearson")
-#highly correlated (0.87)
 ```
 
 ### Append to rest of data
@@ -764,7 +766,20 @@ daily_3yr_dat <- left_join(daily_3yr_dat, sst_20_21, by = "date_hour")
 ### Adding NOAA satelite chlorophyll data
 ```{r}
 chl_dat_raw <- read.csv("data_raw/chl_dat.csv")
-#View(chl_dat_raw)
+View(chl_dat_raw)
+
+chl_dat_raw %>% 
+  slice(-1) %>%
+  mutate(long = as.numeric(longitude)) %>%
+  mutate(lat = as.numeric(latitude)) %>%
+  mutate(chl = as.numeric(chlorophyll)) %>% 
+  mutate(long = round(long, digits = 4)) %>% 
+  mutate(lat = round(lat, digits = 4)) %>%
+  filter(lat == 34.4 | lat == 34.4125) %>% 
+  filter(long == -119.5625 | long == -119.5500) %>%
+  filter(!(lat == 34.4125 & long == -119.5500)) %>% 
+  ggplot(aes(x = long, y = lat)) +
+    geom_point()
 
 chl_dat <- chl_dat_raw %>% 
   slice(-1) %>%
@@ -780,7 +795,7 @@ chl_dat <- chl_dat_raw %>%
   summarize(chl = mean(chl, na.rm = TRUE)) %>% 
   mutate(chl_interp = na.approx(chl)) %>% 
   mutate(mdy = as_date(time), time = NULL)
-#View(chl_dat)
+View(chl_dat)
 
 daily_3yr_dat <- daily_3yr_dat %>% 
   mutate(mdy = as_date(datetime))
@@ -2238,10 +2253,13 @@ daily_3yr_dat %>%
 #Visualizing data coverage:
 daily_3yr_dat %>% 
   filter(Temp_top < 100) %>% 
-  ggplot(aes(x = date_hour)) +
+  ggplot(aes(x = as_datetime(date_hour))) +
     geom_point(aes(y = sft), color = "red") +
     geom_point(aes(y = sst), color = "green") +
-    geom_point(aes(y = Temp_top), color = "blue")
+    geom_point(aes(y = Temp_top), color = "blue") +
+    scale_x_datetime(breaks = "6 months")
+
+View(daily_3yr_dat)
 ```
 
 ### THESIS VERSION ALL SHARKS 
@@ -2956,11 +2974,11 @@ ggplot(gam_dat_lb, aes(x = sft, y = juvenile/area_20m)) +
 anova(lbgam_all)
 ```
 
-### FOR THESIS: testing other temp sources
+### SST ALL SHARKS FOR THESIS
 ```{r}
 lbgam_all_sst <- mgcv::gam(total_unique ~ year +
                                       s(hour, k = 10) +
-                                      s(yday, k = 30, by = year) +
+                                      s(yday, k = 10, by = year) +
                                       beaufort +
                                       vis +
                                       s(tide, k = 10) +
@@ -2973,8 +2991,32 @@ lbgam_all_sst <- mgcv::gam(total_unique ~ year +
 summary(lbgam_all_sst)
 anova(lbgam_all_sst)
 
+visreg(lbgam_all_sst, "sst")
+visreg(lbgam_all, "sft")
+
 ```
 
+### SST SMALL SHARKS FOR THESIS
+```{r}
+lbgam_small_sst <- mgcv::gam(juvenile ~ year +
+                                      s(hour, k = 10) +
+                                      s(yday, k = 10, by = year) +
+                                      beaufort +
+                                      vis +
+                                      s(tide, k = 10) +
+                                      s(sst, k = 10) +
+                                      s(WVHT, k = 10) +
+                                      s(chl_interp, k = 10) +
+                                      offset(area_20m),
+                       data = gam_dat_lb, method = "REML",
+                       family = nb, select = TRUE)
+summary(lbgam_small_sst)
+anova(lbgam_small_sst)
+
+visreg(lbgam_all_sst, "sst")
+visreg(lbgam_all, "sft")
+
+```
 ### Comparing a model w/ sft as only envt'l variable to one with all other envt's variables but no sft
 ```{r}
 lbgam_sft_only <- mgcv::gam(total_unique ~ year +
